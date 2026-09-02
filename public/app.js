@@ -446,6 +446,7 @@
       renderTopbarUser(me.user);
       appView.hidden = false;
       loadHistory();
+      document.dispatchEvent(new CustomEvent('app:ready', { detail: { user: me.user, llmEnabled } }));
     } else {
       authView.hidden = false;
     }

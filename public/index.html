@@ -57,7 +57,71 @@
   </main>
 
   <!-- ===== APP ===== -->
-  <main class="layout app-layout" id="app-view" hidden>
+  <main class="app-shell" id="app-view" hidden>
+    <div class="mode-tabs">
+      <button type="button" class="mode-tab active" data-mode="digest" data-i18n="mode_tab_digest">Topic Digest</button>
+      <button type="button" class="mode-tab" data-mode="scraper" data-i18n="mode_tab_scraper">Raw Scraper</button>
+    </div>
+
+    <!-- ===== TOPIC DIGEST MODE ===== -->
+    <div class="app-layout" id="mode-digest">
+      <aside class="panel history-panel">
+        <button type="button" id="topic-new-btn" class="btn-new-topic">+ <span data-i18n="topic_new">New topic</span></button>
+        <div id="topic-list" class="history-list"></div>
+      </aside>
+
+      <div class="main-col">
+        <section class="panel form-panel" id="topic-composer">
+          <h1 data-i18n="topic_composer_title">What do you want to know?</h1>
+          <form id="topic-form">
+            <label class="field">
+              <span data-i18n="topic_query_label">Your question / topic</span>
+              <textarea id="topic-query" rows="4" data-i18n-placeholder="topic_query_placeholder" placeholder="E.g.: What treatments actually helped people recover from chronic gastritis?" required></textarea>
+            </label>
+
+            <div class="field-row topic-subs-row">
+              <label class="field">
+                <span data-i18n="topic_sub1">Subreddit</span>
+                <div class="prefix-input"><span>r/</span><input id="topic-sub-1" type="text" placeholder="gastritis" required autocomplete="off"></div>
+              </label>
+              <label class="field">
+                <span data-i18n="topic_sub2">Subreddit 2 (optional)</span>
+                <div class="prefix-input"><span>r/</span><input id="topic-sub-2" type="text" autocomplete="off"></div>
+              </label>
+              <label class="field">
+                <span data-i18n="topic_sub3">Subreddit 3 (optional)</span>
+                <div class="prefix-input"><span>r/</span><input id="topic-sub-3" type="text" autocomplete="off"></div>
+              </label>
+            </div>
+
+            <label class="field checkbox-field">
+              <input id="topic-own-knowledge" type="checkbox">
+              <span><span data-i18n="qa_own_knowledge_main">Also let the model add its own knowledge</span> <em data-i18n="qa_own_knowledge_sub">(e.g. general medical knowledge — off by default, answers only from Reddit)</em></span>
+            </label>
+
+            <button type="submit" id="topic-submit" data-i18n="topic_submit">Start digest</button>
+            <p class="form-error" id="topic-form-error" hidden></p>
+          </form>
+        </section>
+
+        <section class="panel qa-panel" id="topic-thread-panel" hidden>
+          <div class="results-head">
+            <h2 id="topic-thread-title"></h2>
+            <span class="badge" id="topic-status-badge" hidden></span>
+          </div>
+          <p class="progress-label" id="topic-progress" hidden></p>
+          <div id="topic-thread" class="qa-thread"></div>
+          <form id="topic-followup-form" class="qa-form" hidden>
+            <textarea id="topic-followup-input" rows="2" data-i18n-placeholder="topic_followup_placeholder" placeholder="Ask a follow-up..." required></textarea>
+            <button type="submit" id="topic-followup-submit" data-i18n="btn_ask">Ask</button>
+          </form>
+          <p class="form-error" id="topic-thread-error" hidden></p>
+        </section>
+      </div>
+    </div>
+
+    <!-- ===== RAW SCRAPER MODE ===== -->
+    <div class="app-layout" id="mode-scraper" hidden>
     <aside class="panel history-panel">
       <h2 data-i18n="history_title">History</h2>
       <div id="history-list" class="history-list"></div>
@@ -171,8 +235,10 @@
         <p class="form-error" id="qa-error" hidden></p>
       </section>
     </div>
+    </div>
   </main>
 
+  <script src="/topics.js"></script>
   <script src="/app.js"></script>
   <script>
     // Dev-only auto-reload: активен само на localhost, няма ефект на реалния домейн.

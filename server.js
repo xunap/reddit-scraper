@@ -20,6 +20,7 @@ const {
   randomState,
 } = require('./auth');
 const { askAboutPosts, LLM_ENABLED } = require('./llm');
+const createTopicsRouter = require('./topics');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -43,6 +44,8 @@ const COMMENT_MODES = {
 app.use(express.json());
 app.use(cookieParser());
 app.use(attachUser);
+const topicsRouter = createTopicsRouter({ pool, requireAuth });
+app.use(topicsRouter);
 app.use(express.static(path.join(__dirname, 'public')));
 
 // --- Job опашка (в паметта; резултатите се пазят трайно в Postgres) ---
@@ -426,6 +429,7 @@ initSchema()
       console.log(`Google login: ${GOOGLE_ENABLED ? 'enabled' : 'disabled'}, LLM Q&A: ${LLM_ENABLED ? 'enabled' : 'disabled'}`);
     });
     setupDevReload(httpServer);
+    topicsRouter.recoverIncompleteState().catch((err) => console.error('Topic recovery грешка:', err));
   })
   .catch((err) => {
     console.error('Неуспешна инициализация на базата данни:', err);
