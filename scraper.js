@@ -117,10 +117,12 @@ async function dismissCookieBanner(page) {
  * @param {number} opts.limit - макс. брой постове (1-300)
  * @param {number|null} opts.commentLimit - null = без посещение на всеки пост (бързо, само списък);
  *   0 = посети всеки пост само за пълния текст; N>0 = текст + до N топ коментара
+ * @param {string|null} [opts.sinceDate] - ISO дата; ако е зададена и sort='new', спираме
+ *   скролирането веднага щом стигнем пост, по-стар или равен на нея (инкрементално скрейпване)
  * @param {(evt: {phase:string, message:string, current?:number, total?:number}) => void} onProgress
  */
 async function scrapeSubreddit(opts, onProgress = () => {}) {
-  const { subreddit, sort = 'hot', timeFilter = 'all', limit = 50, commentLimit = null } = opts;
+  const { subreddit, sort = 'hot', timeFilter = 'all', limit = 50, commentLimit = null, sinceDate = null } = opts;
   const safeLimit = Math.max(1, Math.min(300, Number(limit) || 50));
 
   const browser = await chromium.launch({
@@ -160,12 +162,17 @@ async function scrapeSubreddit(opts, onProgress = () => {}) {
     const collected = new Map();
     let stagnant = 0;
     let scrolls = 0;
+    let hitCutoff = false;
 
-    while (collected.size < safeLimit && scrolls < MAX_SCROLLS && stagnant < STAGNATION_LIMIT) {
+    while (collected.size < safeLimit && scrolls < MAX_SCROLLS && stagnant < STAGNATION_LIMIT && !hitCutoff) {
       const visible = await extractVisiblePosts(page);
       let added = 0;
       for (const p of visible) {
         if (!p.id || collected.has(p.id) || !p.title || !p.url) continue;
+        if (sinceDate && p.date && p.date <= sinceDate) {
+          hitCutoff = true; // sort=new е хронологичен - от тук нататък всичко е по-старо
+          continue;
+        }
         collected.set(p.id, p);
         added += 1;
       }
@@ -180,7 +187,7 @@ async function scrapeSubreddit(opts, onProgress = () => {}) {
       } else {
         stagnant += 1;
       }
-      if (collected.size >= safeLimit) break;
+      if (collected.size >= safeLimit || hitCutoff) break;
       await page.mouse.wheel(0, 2600);
       scrolls += 1;
       await randomDelay(1000, 3000);

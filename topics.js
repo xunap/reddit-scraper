@@ -11,6 +11,7 @@ const DIGEST_COMMENT_LIMIT = 50;
 const DIGEST_POST_LIMIT = 30;
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 дни
 const MAX_TOPICS_PENDING_PER_USER = 2;
+const MAX_CACHED_POSTS = 150; // таван след merge на инкременталните обновявания
 
 // С малки букви нарочно — Reddit имената на сабредити са case-insensitive,
 // а нормализирането максимизира cache hit-овете между различни потребители.
@@ -41,22 +42,47 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
   async function runCacheScrape(id) {
     const row = (await pool.query('SELECT * FROM subreddit_cache WHERE id=$1', [id])).rows[0];
     if (!row) return;
+
+    // Ако вече имаме постове от преди, това е опресняване на остарял кеш, не
+    // първо скрейпване — скрейпваме само НОВИ постове (sort=new, отрязано на
+    // датата на последното скрейпване) вместо да теглим всичко наново.
+    // Коментарите на вече познатите постове НЕ се опресняват (виж бележката
+    // в getOrCreateCacheEntry/README на функцията по-долу).
+    const existingPosts = Array.isArray(row.posts) ? row.posts : [];
+    const isIncremental = existingPosts.length > 0;
+    const sinceDate = isIncremental ? new Date(row.updated_at).toISOString() : null;
+
     await pool.query("UPDATE subreddit_cache SET status='running', updated_at=now() WHERE id=$1", [id]);
     cacheStatusText.set(id, `Скрейпване на r/${row.subreddit}...`);
     try {
-      const posts = await scrapeSubreddit(
+      const newPosts = await scrapeSubreddit(
         {
           subreddit: row.subreddit,
-          sort: row.sort,
+          sort: isIncremental ? 'new' : row.sort,
           timeFilter: row.time_filter,
           limit: DIGEST_POST_LIMIT,
           commentLimit: DIGEST_COMMENT_LIMIT,
+          sinceDate,
         },
-        (evt) => cacheStatusText.set(id, `r/${row.subreddit}: ${evt.message}`)
+        (evt) =>
+          cacheStatusText.set(
+            id,
+            `r/${row.subreddit}${isIncremental ? ' (само нови постове)' : ''}: ${evt.message}`
+          )
       );
+
+      let mergedPosts = newPosts;
+      if (isIncremental) {
+        const existingIds = new Set(existingPosts.map((p) => p.id));
+        const trulyNew = newPosts.filter((p) => !existingIds.has(p.id));
+        mergedPosts = [...trulyNew, ...existingPosts]
+          .sort((a, b) => (b.votes || 0) - (a.votes || 0))
+          .slice(0, MAX_CACHED_POSTS);
+      }
+
       await pool.query(
         "UPDATE subreddit_cache SET status='done', posts=$2, post_count=$3, error=NULL, updated_at=now() WHERE id=$1",
-        [id, JSON.stringify(posts), posts.length]
+        [id, JSON.stringify(mergedPosts), mergedPosts.length]
       );
     } catch (err) {
       await pool.query(
