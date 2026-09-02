@@ -184,6 +184,23 @@ textarea{resize:vertical;}
 .prefix-input:focus-within{outline:1.5px solid var(--accent); outline-offset:1px;}
 input:focus, select:focus, textarea:focus{outline:1.5px solid var(--accent); outline-offset:1px; border-color:var(--accent);}
 
+.topic-subs-list{display:flex; flex-direction:column; gap:0.6rem; margin-bottom:0.7rem;}
+.topic-sub-row{display:flex; align-items:center; gap:0.5rem;}
+.topic-sub-row .prefix-input{flex:1;}
+.topic-sub-remove{
+  flex-shrink:0; width:32px; height:32px; padding:0; border-radius:50%; border:1px solid var(--border);
+  background:var(--panel); background-image:none; box-shadow:none; color:var(--ink-muted);
+  font-size:1.2rem; line-height:1; display:flex; align-items:center; justify-content:center;
+}
+.topic-sub-remove:hover{border-color:var(--err-ink); color:var(--err-ink); opacity:1; transform:none; box-shadow:none;}
+.btn-add-sub{
+  background:none; background-image:none; box-shadow:none; border:1px dashed var(--border);
+  color:var(--ink-muted); font-weight:600; font-size:0.85rem; padding:0.5rem 1rem; border-radius:8px;
+}
+.btn-add-sub:hover{border-color:var(--accent); color:var(--accent); border-style:solid; opacity:1; transform:none; box-shadow:none;}
+.btn-add-sub:disabled{opacity:0.4; cursor:not-allowed; transform:none;}
+.btn-add-sub:disabled:hover{border-color:var(--border); color:var(--ink-muted); border-style:dashed;}
+
 .toggle-field{flex-direction:row; align-items:flex-start; gap:0.7rem; font-size:0.9rem; color:var(--ink); cursor:pointer;}
 .toggle-copy{padding-top:0.1rem;}
 .toggle-copy em{color:var(--ink-muted); font-style:normal;}

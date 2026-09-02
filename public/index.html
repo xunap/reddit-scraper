@@ -74,19 +74,14 @@
               <textarea id="topic-query" rows="4" required></textarea>
             </label>
 
-            <div class="field-row topic-subs-row">
-              <label class="field">
-                <span data-i18n="topic_sub1">Subreddit</span>
-                <div class="prefix-input"><span>r/</span><input id="topic-sub-1" type="text" required autocomplete="off"></div>
-              </label>
-              <label class="field">
-                <span data-i18n="topic_sub2">Subreddit 2 (optional)</span>
-                <div class="prefix-input"><span>r/</span><input id="topic-sub-2" type="text" autocomplete="off"></div>
-              </label>
-              <label class="field">
-                <span data-i18n="topic_sub3">Subreddit 3 (optional)</span>
-                <div class="prefix-input"><span>r/</span><input id="topic-sub-3" type="text" autocomplete="off"></div>
-              </label>
+            <div class="field">
+              <span data-i18n="topic_sub1">Subreddit</span>
+              <div id="topic-subs-list" class="topic-subs-list">
+                <div class="topic-sub-row">
+                  <div class="prefix-input"><span>r/</span><input type="text" class="topic-sub-input" required autocomplete="off"></div>
+                </div>
+              </div>
+              <button type="button" id="topic-sub-add" class="btn-add-sub">+ <span data-i18n="topic_sub_add">Add subreddit</span></button>
             </div>
 
             <div class="field-row">

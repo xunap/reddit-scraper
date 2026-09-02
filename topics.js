@@ -3,7 +3,7 @@ const express = require('express');
 const { scrapeSubreddit } = require('./scraper');
 const { generateDigest, continueTopicChat, LLM_ENABLED } = require('./llm');
 
-const MAX_SUBREDDITS = 3;
+const MAX_SUBREDDITS = 10;
 const DIGEST_SORT = 'top';
 const DIGEST_TIME_FILTER = 'all';
 const DIGEST_COMMENT_MODE = 'top50';

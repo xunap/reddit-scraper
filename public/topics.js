@@ -7,12 +7,48 @@
   const topicSubmit = document.getElementById('topic-submit');
   const topicFormError = document.getElementById('topic-form-error');
   const topicQuery = document.getElementById('topic-query');
-  const topicSub1 = document.getElementById('topic-sub-1');
-  const topicSub2 = document.getElementById('topic-sub-2');
-  const topicSub3 = document.getElementById('topic-sub-3');
+  const topicSubsList = document.getElementById('topic-subs-list');
+  const topicSubAdd = document.getElementById('topic-sub-add');
+  const MAX_SUBREDDIT_ROWS = 10;
   const topicOwnKnowledge = document.getElementById('topic-own-knowledge');
   const topicPostCount = document.getElementById('topic-post-count');
   const topicDepth = document.getElementById('topic-depth');
+
+  function updateSubAddState() {
+    const count = topicSubsList.querySelectorAll('.topic-sub-row').length;
+    topicSubAdd.disabled = count >= MAX_SUBREDDIT_ROWS;
+    topicSubsList.querySelectorAll('.topic-sub-remove').forEach((btn) => {
+      btn.hidden = topicSubsList.querySelectorAll('.topic-sub-row').length <= 1;
+    });
+  }
+
+  function addSubRow() {
+    if (topicSubsList.querySelectorAll('.topic-sub-row').length >= MAX_SUBREDDIT_ROWS) return;
+    const row = document.createElement('div');
+    row.className = 'topic-sub-row';
+    row.innerHTML = `
+      <div class="prefix-input"><span>r/</span><input type="text" class="topic-sub-input" autocomplete="off"></div>
+      <button type="button" class="topic-sub-remove" aria-label="Remove">&times;</button>
+    `;
+    row.querySelector('.topic-sub-remove').addEventListener('click', () => {
+      row.remove();
+      updateSubAddState();
+    });
+    topicSubsList.appendChild(row);
+    updateSubAddState();
+    row.querySelector('.topic-sub-input').focus();
+  }
+
+  function resetSubRows() {
+    topicSubsList.querySelectorAll('.topic-sub-row').forEach((row, i) => {
+      if (i === 0) row.querySelector('.topic-sub-input').value = '';
+      else row.remove();
+    });
+    updateSubAddState();
+  }
+
+  topicSubAdd.addEventListener('click', addSubRow);
+  updateSubAddState();
 
   const topicThreadPanel = document.getElementById('topic-thread-panel');
   const topicThreadTitle = document.getElementById('topic-thread-title');
@@ -167,6 +203,7 @@
     topicThreadPanel.hidden = true;
     topicComposer.hidden = false;
     topicForm.reset();
+    resetSubRows();
     topicFormError.hidden = true;
     topicList.querySelectorAll('.history-item.active').forEach((el) => el.classList.remove('active'));
   });
@@ -177,7 +214,7 @@
     topicSubmit.disabled = true;
     topicSubmit.textContent = I18N.t('topic_submit_loading');
 
-    const subreddits = [topicSub1.value, topicSub2.value, topicSub3.value].map((s) => s.trim()).filter(Boolean);
+    const subreddits = [...topicSubsList.querySelectorAll('.topic-sub-input')].map((el) => el.value.trim()).filter(Boolean);
 
     try {
       const res = await fetch('/api/topics', {
