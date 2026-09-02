@@ -98,13 +98,22 @@
           </div>
 
           <label class="field">
-            <span data-i18n="field_limit">Number of posts (max. 300, or 80 with full text)</span>
-            <input id="limit" name="limit" type="number" min="1" max="300" value="50">
+            <span data-i18n="field_comment_mode">Comments to include</span>
+            <select id="commentMode" name="commentMode">
+              <option value="none" selected data-i18n="opt_comments_none">None (fastest, list only)</option>
+              <option value="body" data-i18n="opt_comments_body">Title + post text only</option>
+              <option value="top3" data-i18n="opt_comments_top3">Title + post text + top 3 comments</option>
+              <option value="top10" data-i18n="opt_comments_top10">Title + post text + top 10 comments</option>
+              <option value="top25" data-i18n="opt_comments_top25">Title + post text + top 25 comments</option>
+              <option value="top50" data-i18n="opt_comments_top50">Title + post text + top 50 comments</option>
+              <option value="top100" data-i18n="opt_comments_top100">Title + post text + top 100 comments</option>
+              <option value="all" data-i18n="opt_comments_all">Title + post text + all comments</option>
+            </select>
           </label>
 
-          <label class="field checkbox-field">
-            <input id="fetchDetails" name="fetchDetails" type="checkbox">
-            <span><span data-i18n="field_details_main">Full text + top comments for each post</span> <em data-i18n="field_details_sub">(slower — needed for Q&amp;A on the content)</em></span>
+          <label class="field">
+            <span id="limit-label">Number of posts</span>
+            <input id="limit" name="limit" type="number" min="1" max="300" value="50">
           </label>
 
           <button type="submit" id="submit-btn" data-i18n="btn_start_scrape">Start scraping</button>

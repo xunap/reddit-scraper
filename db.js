@@ -26,7 +26,7 @@ async function initSchema() {
       sort TEXT NOT NULL,
       time_filter TEXT,
       post_limit INTEGER,
-      fetch_details BOOLEAN DEFAULT false,
+      comment_mode TEXT NOT NULL DEFAULT 'none',
       status TEXT NOT NULL DEFAULT 'queued',
       post_count INTEGER,
       posts JSONB,
@@ -34,6 +34,8 @@ async function initSchema() {
       created_at TIMESTAMPTZ DEFAULT now(),
       finished_at TIMESTAMPTZ
     );
+    ALTER TABLE jobs ADD COLUMN IF NOT EXISTS comment_mode TEXT NOT NULL DEFAULT 'none';
+    ALTER TABLE jobs DROP COLUMN IF EXISTS fetch_details;
     CREATE INDEX IF NOT EXISTS idx_jobs_user ON jobs(user_id, created_at DESC);
 
     CREATE TABLE IF NOT EXISTS qa (

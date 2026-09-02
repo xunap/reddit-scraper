@@ -11,7 +11,6 @@ const { chromium } = require('playwright');
 
 const MAX_SCROLLS = 120;
 const STAGNATION_LIMIT = 8;
-const MAX_COMMENTS_PER_POST = 15;
 
 function randomDelay(minMs = 1000, maxMs = 3000) {
   const ms = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
@@ -62,11 +61,28 @@ async function extractPostBody(page) {
 }
 
 async function extractTopComments(page, max) {
+  if (!max) return [];
   try {
     await page.waitForSelector('shreddit-comment', { timeout: 8000 });
   } catch (e) {
     return [];
   }
+
+  // За по-големи заявки Reddit lazy-load-ва коментарите при скрол — опитваме
+  // се да ги "изкараме" преди да ги извлечем.
+  if (max > 15) {
+    let stagnant = 0;
+    let lastCount = 0;
+    for (let i = 0; i < 25 && stagnant < 3; i++) {
+      const count = await page.locator('shreddit-comment').count();
+      if (count >= max) break;
+      stagnant = count === lastCount ? stagnant + 1 : 0;
+      lastCount = count;
+      await page.mouse.wheel(0, 2600);
+      await page.waitForTimeout(600);
+    }
+  }
+
   const comments = await page.$$eval(
     'shreddit-comment',
     (els, max) =>
@@ -99,11 +115,12 @@ async function dismissCookieBanner(page) {
  * @param {'hot'|'new'|'top'} opts.sort
  * @param {string} [opts.timeFilter] - за sort=top: hour|day|week|month|year|all
  * @param {number} opts.limit - макс. брой постове (1-300)
- * @param {boolean} opts.fetchDetails - дали да се извлича пълен текст + коментари (бавно)
+ * @param {number|null} opts.commentLimit - null = без посещение на всеки пост (бързо, само списък);
+ *   0 = посети всеки пост само за пълния текст; N>0 = текст + до N топ коментара
  * @param {(evt: {phase:string, message:string, current?:number, total?:number}) => void} onProgress
  */
 async function scrapeSubreddit(opts, onProgress = () => {}) {
-  const { subreddit, sort = 'hot', timeFilter = 'all', limit = 50, fetchDetails = false } = opts;
+  const { subreddit, sort = 'hot', timeFilter = 'all', limit = 50, commentLimit = null } = opts;
   const safeLimit = Math.max(1, Math.min(300, Number(limit) || 50));
 
   const browser = await chromium.launch({
@@ -177,7 +194,7 @@ async function scrapeSubreddit(opts, onProgress = () => {}) {
       total: safeLimit,
     });
 
-    if (fetchDetails) {
+    if (commentLimit !== null) {
       for (let i = 0; i < posts.length; i++) {
         const p = posts[i];
         onProgress({
@@ -190,7 +207,7 @@ async function scrapeSubreddit(opts, onProgress = () => {}) {
           await page.goto(p.url, { waitUntil: 'domcontentloaded', timeout: 25000 });
           await page.waitForTimeout(1500);
           p.bodyText = await extractPostBody(page);
-          p.topComments = await extractTopComments(page, MAX_COMMENTS_PER_POST);
+          p.topComments = await extractTopComments(page, commentLimit);
         } catch (err) {
           p.bodyText = null;
           p.topComments = [];

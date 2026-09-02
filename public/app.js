@@ -17,6 +17,11 @@
   const formError = document.getElementById('form-error');
   const sortSelect = document.getElementById('sort');
   const timeFilterField = document.getElementById('timefilter-field');
+  const commentModeSelect = document.getElementById('commentMode');
+  const limitInput = document.getElementById('limit');
+  const limitLabel = document.getElementById('limit-label');
+
+  const COMMENT_MODE_MAX_POSTS = { none: 300, body: 150, top3: 80, top10: 80, top25: 50, top50: 50, top100: 30, all: 20 };
 
   const statusPanel = document.getElementById('status-panel');
   const statusTitle = document.getElementById('status-title');
@@ -189,6 +194,16 @@
   sortSelect.addEventListener('change', toggleTimeFilter);
   toggleTimeFilter();
 
+  function updateLimitLabel() {
+    const max = COMMENT_MODE_MAX_POSTS[commentModeSelect.value] || 300;
+    limitInput.max = max;
+    if (parseInt(limitInput.value, 10) > max) limitInput.value = max;
+    limitLabel.textContent = I18N.t('field_limit', { max });
+  }
+  commentModeSelect.addEventListener('change', updateLimitLabel);
+  updateLimitLabel();
+  document.addEventListener('i18n:change', updateLimitLabel);
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     formError.hidden = true;
@@ -200,7 +215,7 @@
       sort: sortSelect.value,
       timeFilter: document.getElementById('timeFilter').value,
       limit: parseInt(document.getElementById('limit').value, 10) || 50,
-      fetchDetails: document.getElementById('fetchDetails').checked,
+      commentMode: commentModeSelect.value,
     };
 
     try {

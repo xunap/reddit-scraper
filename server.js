@@ -1,4 +1,4 @@
-require('dotenv').config({ quiet: true });
+require('dotenv').config({ quiet: true, override: true });
 const path = require('path');
 const crypto = require('crypto');
 const express = require('express');
@@ -27,6 +27,18 @@ const JOB_MEMORY_TTL_MS = 2 * 60 * 60 * 1000; // 2 часа в паметта (�
 const MAX_QUEUE_LENGTH = 15;
 const MAX_PENDING_PER_USER = 2;
 
+// commentLimit: null = без посещение на всеки пост (само списък); число = текст + до N топ коментара
+const COMMENT_MODES = {
+  none: { commentLimit: null, maxPosts: 300 },
+  body: { commentLimit: 0, maxPosts: 150 },
+  top3: { commentLimit: 3, maxPosts: 80 },
+  top10: { commentLimit: 10, maxPosts: 80 },
+  top25: { commentLimit: 25, maxPosts: 50 },
+  top50: { commentLimit: 50, maxPosts: 50 },
+  top100: { commentLimit: 100, maxPosts: 30 },
+  all: { commentLimit: 500, maxPosts: 20 },
+};
+
 app.use(express.json());
 app.use(cookieParser());
 app.use(attachUser);
@@ -52,7 +64,7 @@ function pushLog(job, message) {
 
 async function persistJob(job) {
   await pool.query(
-    `INSERT INTO jobs (id, user_id, subreddit, sort, time_filter, post_limit, fetch_details, status, post_count, posts, error, created_at, finished_at)
+    `INSERT INTO jobs (id, user_id, subreddit, sort, time_filter, post_limit, comment_mode, status, post_count, posts, error, created_at, finished_at)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, to_timestamp($12/1000.0), $13)
      ON CONFLICT (id) DO UPDATE SET status=$8, post_count=$9, posts=$10, error=$11, finished_at=$13`,
     [
@@ -62,7 +74,7 @@ async function persistJob(job) {
       job.params.sort,
       job.params.timeFilter,
       job.params.limit,
-      job.params.fetchDetails,
+      job.params.commentMode,
       job.status,
       job.posts ? job.posts.length : null,
       job.posts ? JSON.stringify(job.posts) : null,
@@ -85,7 +97,7 @@ function processQueue() {
   pushLog(job, 'Стартиране на скрейпването...');
   persistJob(job).catch(() => {});
 
-  scrapeSubreddit(job.params, (evt) => {
+  scrapeSubreddit({ ...job.params, commentLimit: COMMENT_MODES[job.params.commentMode].commentLimit }, (evt) => {
     job.progress = { phase: evt.phase, current: evt.current ?? job.progress.current, total: evt.total ?? job.progress.total };
     pushLog(job, evt.message);
   })
@@ -215,16 +227,17 @@ app.post('/api/scrape', requireAuth, async (req, res) => {
     return res.status(429).json({ error: 'Опашката е пълна в момента. Опитай отново след малко.' });
   }
 
-  const { subreddit, sort, timeFilter, limit, fetchDetails } = req.body || {};
+  const { subreddit, sort, timeFilter, limit, commentMode } = req.body || {};
   const cleanSubreddit = String(subreddit || '').trim().replace(/^\/?r\//i, '').replace(/[^a-zA-Z0-9_]/g, '');
   if (!cleanSubreddit) return res.status(400).json({ error: 'Липсва валидно име на сабредит.' });
   const cleanSort = ['hot', 'new', 'top'].includes(sort) ? sort : 'hot';
   const cleanTimeFilter = ['hour', 'day', 'week', 'month', 'year', 'all'].includes(timeFilter) ? timeFilter : 'all';
-  const cleanLimit = Math.max(1, Math.min(300, parseInt(limit, 10) || 50));
-  const cleanFetchDetails = Boolean(fetchDetails);
+  const cleanCommentMode = Object.prototype.hasOwnProperty.call(COMMENT_MODES, commentMode) ? commentMode : 'none';
+  const modeConfig = COMMENT_MODES[cleanCommentMode];
+  const cleanLimit = Math.max(1, Math.min(modeConfig.maxPosts, parseInt(limit, 10) || 50));
 
-  if (cleanFetchDetails && cleanLimit > 80) {
-    return res.status(400).json({ error: `С включен "пълен текст + коментари" лимитът е максимум 80 поста (заявени: ${cleanLimit}).` });
+  if (parseInt(limit, 10) > modeConfig.maxPosts) {
+    return res.status(400).json({ error: `За избрания режим на коментари лимитът е максимум ${modeConfig.maxPosts} поста (заявени: ${parseInt(limit, 10)}).` });
   }
 
   const jobId = crypto.randomBytes(8).toString('hex');
@@ -232,7 +245,7 @@ app.post('/api/scrape', requireAuth, async (req, res) => {
     id: jobId,
     userId: req.user.id,
     status: 'queued',
-    params: { subreddit: cleanSubreddit, sort: cleanSort, timeFilter: cleanTimeFilter, limit: cleanLimit, fetchDetails: cleanFetchDetails },
+    params: { subreddit: cleanSubreddit, sort: cleanSort, timeFilter: cleanTimeFilter, limit: cleanLimit, commentMode: cleanCommentMode },
     progress: { phase: 'queued', current: 0, total: cleanLimit },
     log: [],
     posts: null,
@@ -242,7 +255,7 @@ app.post('/api/scrape', requireAuth, async (req, res) => {
   };
   jobs.set(jobId, job);
   queue.push(jobId);
-  pushLog(job, `Заявка приета (позиция в опашката: ${queue.length}): r/${cleanSubreddit}, sort=${cleanSort}${cleanSort === 'top' ? `(${cleanTimeFilter})` : ''}, limit=${cleanLimit}, details=${cleanFetchDetails}`);
+  pushLog(job, `Заявка приета (позиция в опашката: ${queue.length}): r/${cleanSubreddit}, sort=${cleanSort}${cleanSort === 'top' ? `(${cleanTimeFilter})` : ''}, limit=${cleanLimit}, comments=${cleanCommentMode}`);
 
   processQueue();
   res.json({ jobId });
@@ -260,7 +273,7 @@ async function loadJobOwned(jobId, userId) {
       id: row.id,
       userId: row.user_id,
       status: row.status,
-      params: { subreddit: row.subreddit, sort: row.sort, timeFilter: row.time_filter, limit: row.post_limit, fetchDetails: row.fetch_details },
+      params: { subreddit: row.subreddit, sort: row.sort, timeFilter: row.time_filter, limit: row.post_limit, commentMode: row.comment_mode },
       posts: row.posts,
       error: row.error,
       log: [],
@@ -314,7 +327,7 @@ app.get('/api/jobs/:id/export.:format', requireAuth, async (req, res) => {
     return res.send(JSON.stringify(found.job.posts, null, 2));
   }
   if (format === 'csv') {
-    const headers = found.job.params.fetchDetails
+    const headers = found.job.params.commentMode !== 'none'
       ? ['title', 'author', 'votes', 'comments', 'url', 'date', 'postType', 'bodyText']
       : ['title', 'author', 'votes', 'comments', 'url', 'date', 'postType'];
     const lines = [headers.join(',')];
@@ -371,7 +384,7 @@ app.get('/api/jobs/:id/qa', requireAuth, async (req, res) => {
 
 app.get('/api/history', requireAuth, async (req, res) => {
   const result = await pool.query(
-    `SELECT id, subreddit, sort, time_filter, post_limit, fetch_details, status, post_count, error, created_at, finished_at
+    `SELECT id, subreddit, sort, time_filter, post_limit, comment_mode, status, post_count, error, created_at, finished_at
      FROM jobs WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100`,
     [req.user.id]
   );
