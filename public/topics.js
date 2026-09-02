@@ -11,7 +11,6 @@
   const topicSubAdd = document.getElementById('topic-sub-add');
   const MAX_SUBREDDIT_ROWS = 10;
   const topicOwnKnowledge = document.getElementById('topic-own-knowledge');
-  const topicPostCount = document.getElementById('topic-post-count');
   const topicDepth = document.getElementById('topic-depth');
 
   function updateSubAddState() {
@@ -208,6 +207,19 @@
     topicList.querySelectorAll('.history-item.active').forEach((el) => el.classList.remove('active'));
   });
 
+  // Ctrl+Enter, Shift+Enter, или Ctrl+Shift+Enter изпращат формата; обикновен
+  // Enter си остава нов ред в textarea-та.
+  function wireSubmitShortcut(textarea, form) {
+    textarea.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.shiftKey)) {
+        e.preventDefault();
+        form.requestSubmit();
+      }
+    });
+  }
+  wireSubmitShortcut(topicQuery, topicForm);
+  wireSubmitShortcut(topicFollowupInput, topicFollowupForm);
+
   topicForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     topicFormError.hidden = true;
@@ -224,7 +236,6 @@
           subreddits,
           query: topicQuery.value.trim(),
           useOwnKnowledge: topicOwnKnowledge.checked,
-          postCount: parseInt(topicPostCount.value, 10),
           depth: topicDepth.value,
         }),
       });
@@ -246,16 +257,17 @@
     const content = topicFollowupInput.value.trim();
     if (!content || !currentTopicId) return;
     topicThreadError.hidden = true;
+    topicFollowupInput.value = '';
     topicFollowupSubmit.disabled = true;
     topicFollowupInput.disabled = true;
+
+    renderMessage({ role: 'user', content });
 
     const thinking = document.createElement('div');
     thinking.className = 'qa-thinking';
     thinking.textContent = I18N.t('qa_thinking');
     topicThread.appendChild(thinking);
     topicThread.scrollTop = topicThread.scrollHeight;
-
-    renderMessage({ role: 'user', content });
 
     try {
       const res = await fetch(`/api/topics/${currentTopicId}/messages`, {
@@ -267,7 +279,6 @@
       thinking.remove();
       if (!res.ok) throw new Error(data.error || I18N.t('err_topic_followup_default'));
       renderMessage(data);
-      topicFollowupInput.value = '';
       loadTopicList();
     } catch (err) {
       thinking.remove();

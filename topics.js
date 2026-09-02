@@ -9,11 +9,9 @@ const DIGEST_TIME_FILTER = 'all';
 const DIGEST_COMMENT_MODE = 'top50';
 const DIGEST_COMMENT_LIMIT = 50;
 // Кешът винаги се опитва да събере до толкова РЕАЛНИ (не-меме) постове на
-// сабредит - конкретната тема после само отрязва до избрания от потребителя
-// брой (ALLOWED_POST_COUNTS), така че всички теми споделят един кеш ред.
+// сабредит; всяка тема винаги ползва целия топ100 (потребителят не избира).
 const DIGEST_MAX_POST_TARGET = 100;
-const ALLOWED_POST_COUNTS = [10, 25, 50, 100];
-const DEFAULT_POST_COUNT = 25;
+const DEFAULT_POST_COUNT = DIGEST_MAX_POST_TARGET; // винаги топ100, потребителят не избира
 const ALLOWED_DEPTHS = ['brief', 'standard', 'deep'];
 const DEFAULT_DEPTH = 'standard';
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 дни
@@ -252,7 +250,7 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
       return res.status(429).json({ error: `Вече имаш ${pendingForUser} чакащи тема(и). Изчакай да приключат.` });
     }
 
-    const { subreddits, query, useOwnKnowledge, postCount, depth } = req.body || {};
+    const { subreddits, query, useOwnKnowledge, depth } = req.body || {};
     const cleanSubs = [...new Set((Array.isArray(subreddits) ? subreddits : []).map(sanitizeSubreddit).filter(Boolean))];
     if (!cleanSubs.length) return res.status(400).json({ error: 'Липсва поне един валиден сабредит.' });
     if (cleanSubs.length > MAX_SUBREDDITS) return res.status(400).json({ error: `Максимум ${MAX_SUBREDDITS} сабредита.` });
@@ -261,7 +259,7 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
     if (!cleanQuery) return res.status(400).json({ error: 'Липсва въпрос/тема.' });
     if (cleanQuery.length > 2000) return res.status(400).json({ error: 'Въпросът е твърде дълъг (макс. 2000 символа).' });
 
-    const cleanPostCount = ALLOWED_POST_COUNTS.includes(Number(postCount)) ? Number(postCount) : DEFAULT_POST_COUNT;
+    const cleanPostCount = DEFAULT_POST_COUNT;
     const cleanDepth = ALLOWED_DEPTHS.includes(depth) ? depth : DEFAULT_DEPTH;
 
     const topicId = crypto.randomBytes(8).toString('hex');
