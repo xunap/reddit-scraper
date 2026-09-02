@@ -103,6 +103,7 @@
 
       topicThreadTitle.textContent = data.topic.title;
       setStatusBadge(data.topic.status);
+      topicOwnKnowledge.checked = Boolean(data.topic.use_own_knowledge);
       data.messages.forEach(renderMessage);
 
       if (data.topic.status === 'running' || data.topic.status === 'queued') {
