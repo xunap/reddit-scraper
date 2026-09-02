@@ -45,14 +45,16 @@ function buildContext(posts) {
   return { text: chunks.join('\n'), includedCount: sorted.length - truncatedCount, totalCount: sorted.length, truncated: truncatedCount > 0 };
 }
 
-async function askAboutPosts({ posts, question, subreddit }) {
+async function askAboutPosts({ posts, question, subreddit, useOwnKnowledge = false }) {
   if (!LLM_ENABLED) {
     throw new Error('OPENROUTER_API_KEY не е конфигуриран на сървъра.');
   }
 
   const { text: context, includedCount, totalCount, truncated } = buildContext(posts);
 
-  const systemPrompt = `Ти си асистент, който отговаря на въпроси САМО въз основа на предоставените Reddit постове и коментари от r/${subreddit}. Не измисляй информация, която не е в текста. Ако данните не съдържат отговор, кажи го ясно. Форматирай отговора структурирано (Markdown: заглавия, bullet точки, удебелен текст където е уместно). Отговори на същия език, на който е зададен въпросът.`;
+  const systemPrompt = useOwnKnowledge
+    ? `Ти си асистент, който отговаря на въпроси на база предоставените Reddit постове и коментари от r/${subreddit}, но може да добавя и собствени общи знания (напр. медицински, технически и т.н.), когато Reddit съдържанието е недостатъчно. Ясно разграничавай в отговора кое идва от Reddit дискусията ("Според r/${subreddit}...") и кое е твое общо знание ("Общо взето..." / "От медицинска гледна точка..."). Никога не представяй собствено знание като мнение на Reddit потребители. Форматирай отговора структурирано (Markdown: заглавия, bullet точки, удебелен текст където е уместно). Отговори на същия език, на който е зададен въпросът.`
+    : `Ти си асистент, който отговаря на въпроси САМО въз основа на предоставените Reddit постове и коментари от r/${subreddit}. Не измисляй информация, която не е в текста, и не добавяй собствени общи/експертни знания. Ако данните не съдържат отговор, кажи го ясно. Форматирай отговора структурирано (Markdown: заглавия, bullet точки, удебелен текст където е уместно). Отговори на същия език, на който е зададен въпросът.`;
 
   const userPrompt = `Данни от r/${subreddit} (${includedCount} от общо ${totalCount} поста${truncated ? ', някои постове/коментари са отрязани заради дължина' : ''}):\n\n${context}\n\n---\n\nВъпрос: ${question}`;
 

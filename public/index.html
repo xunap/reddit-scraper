@@ -161,7 +161,11 @@
         <p class="qa-hint" id="qa-hint"></p>
         <div id="qa-thread" class="qa-thread"></div>
         <form id="qa-form" class="qa-form">
-          <textarea id="qa-input" data-i18n-placeholder="qa_placeholder" placeholder="E.g.: What are the three most common complaints in the comments?" rows="2" required></textarea>
+          <textarea id="qa-input" data-i18n-placeholder="qa_placeholder" placeholder="E.g.: What are the three most common complaints in the comments?" rows="4" required></textarea>
+          <label class="field checkbox-field">
+            <input id="qa-own-knowledge" type="checkbox">
+            <span><span data-i18n="qa_own_knowledge_main">Also let the model add its own knowledge</span> <em data-i18n="qa_own_knowledge_sub">(e.g. general medical knowledge — off by default, answers only from Reddit)</em></span>
+          </label>
           <button type="submit" id="qa-submit" data-i18n="btn_ask">Ask</button>
         </form>
         <p class="form-error" id="qa-error" hidden></p>

@@ -41,6 +41,7 @@
   const qaThread = document.getElementById('qa-thread');
   const qaForm = document.getElementById('qa-form');
   const qaInput = document.getElementById('qa-input');
+  const qaOwnKnowledge = document.getElementById('qa-own-knowledge');
   const qaSubmit = document.getElementById('qa-submit');
   const qaError = document.getElementById('qa-error');
 
@@ -396,7 +397,7 @@
       const res = await fetch(`/api/jobs/${currentJobId}/ask`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question }),
+        body: JSON.stringify({ question, useOwnKnowledge: qaOwnKnowledge.checked }),
       });
       const data = await res.json();
       thinking.remove();

@@ -344,7 +344,7 @@ app.get('/api/jobs/:id/export.:format', requireAuth, async (req, res) => {
 
 app.post('/api/jobs/:id/ask', requireAuth, async (req, res) => {
   try {
-    const { question } = req.body || {};
+    const { question, useOwnKnowledge } = req.body || {};
     if (!question || !question.trim()) return res.status(400).json({ error: 'Липсва въпрос.' });
 
     const found = await loadJobOwned(req.params.id, req.user.id);
@@ -353,7 +353,12 @@ app.post('/api/jobs/:id/ask', requireAuth, async (req, res) => {
       return res.status(409).json({ error: 'Job-ът трябва да е завършен и с резултати, за да питаш по него.' });
     }
 
-    const result = await askAboutPosts({ posts: found.job.posts, question: question.trim(), subreddit: found.job.params.subreddit });
+    const result = await askAboutPosts({
+      posts: found.job.posts,
+      question: question.trim(),
+      subreddit: found.job.params.subreddit,
+      useOwnKnowledge: Boolean(useOwnKnowledge),
+    });
 
     const saved = await pool.query(
       'INSERT INTO qa (job_id, user_id, question, answer) VALUES ($1,$2,$3,$4) RETURNING id, created_at',
