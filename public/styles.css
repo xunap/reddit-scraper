@@ -134,6 +134,7 @@ body{
 .history-item .h-status.done{background:var(--ok-bg); color:var(--ok-ink);}
 .history-item .h-status.error{background:var(--err-bg); color:var(--err-ink);}
 .history-item .h-status.running, .history-item .h-status.queued{background:var(--run-bg); color:var(--run-ink);}
+.h-own-knowledge{font-size:0.85em; cursor:help;}
 
 .qa-panel h2{margin-bottom:0.3rem;}
 .qa-hint{color:var(--ink-muted); font-size:0.82rem; margin:0 0 1rem;}

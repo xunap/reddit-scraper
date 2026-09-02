@@ -9,8 +9,8 @@
 
 const { chromium } = require('playwright');
 
-const MAX_SCROLLS = 120;
-const STAGNATION_LIMIT = 8;
+const MAX_SCROLLS = 160;
+const STAGNATION_LIMIT = 15;
 
 function randomDelay(minMs = 1000, maxMs = 3000) {
   const ms = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
@@ -44,9 +44,18 @@ async function extractVisiblePosts(page) {
         const d = new Date(createdRaw);
         date = isNaN(d.getTime()) ? createdRaw : d.toISOString();
       }
-      return { id, title, author, votes, comments, url, postType, domain, date };
+      const flairEl = el.querySelector('[slot*="flair" i], [class*="flair" i], shreddit-post-flair');
+      const flair = flairEl ? flairEl.textContent.trim() : '';
+      return { id, title, author, votes, comments, url, postType, domain, date, flair };
     })
   );
+}
+
+// Груб филтър за забавни/меме постове - те обикновено доминират топ класациите
+// на здравни сабредити и нямат съществена стойност за digest анализа.
+const MEME_PATTERN = /\b(meme|memes|shitpost|shit post|funny|lol|lmao|lmfao|rofl|joke|comic|cartoon|copypasta)\b|😂|🤣/i;
+function isLikelyMeme(post) {
+  return MEME_PATTERN.test(post.flair || '') || MEME_PATTERN.test(post.title || '');
 }
 
 async function extractPostBody(page) {
@@ -160,6 +169,8 @@ async function scrapeSubreddit(opts, onProgress = () => {}) {
     }
 
     const collected = new Map();
+    const seenMemeIds = new Set();
+    let memeSkipped = 0;
     let stagnant = 0;
     let scrolls = 0;
     let hitCutoff = false;
@@ -173,6 +184,13 @@ async function scrapeSubreddit(opts, onProgress = () => {}) {
           hitCutoff = true; // sort=new е хронологичен - от тук нататък всичко е по-старо
           continue;
         }
+        if (isLikelyMeme(p)) {
+          if (!seenMemeIds.has(p.id)) {
+            seenMemeIds.add(p.id);
+            memeSkipped += 1;
+          }
+          continue; // не броим мемета/забавни постове към целевия лимит
+        }
         collected.set(p.id, p);
         added += 1;
       }
@@ -180,7 +198,7 @@ async function scrapeSubreddit(opts, onProgress = () => {}) {
         stagnant = 0;
         onProgress({
           phase: 'listing',
-          message: `Скрол ${scrolls + 1}: +${added} нови поста`,
+          message: `Скрол ${scrolls + 1}: +${added} нови поста${memeSkipped ? ` (${memeSkipped} мемета пропуснати общо)` : ''}`,
           current: collected.size,
           total: safeLimit,
         });

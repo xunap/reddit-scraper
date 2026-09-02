@@ -8,7 +8,12 @@ const DIGEST_SORT = 'top';
 const DIGEST_TIME_FILTER = 'all';
 const DIGEST_COMMENT_MODE = 'top50';
 const DIGEST_COMMENT_LIMIT = 50;
-const DIGEST_POST_LIMIT = 30;
+// Кешът винаги се опитва да събере до толкова РЕАЛНИ (не-меме) постове на
+// сабредит - конкретната тема после само отрязва до избрания от потребителя
+// брой (ALLOWED_POST_COUNTS), така че всички теми споделят един кеш ред.
+const DIGEST_MAX_POST_TARGET = 100;
+const ALLOWED_POST_COUNTS = [10, 25, 50, 100];
+const DEFAULT_POST_COUNT = 25;
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 дни
 const MAX_TOPICS_PENDING_PER_USER = 2;
 const MAX_CACHED_POSTS = 150; // таван след merge на инкременталните обновявания
@@ -60,7 +65,7 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
           subreddit: row.subreddit,
           sort: isIncremental ? 'new' : row.sort,
           timeFilter: row.time_filter,
-          limit: DIGEST_POST_LIMIT,
+          limit: DIGEST_MAX_POST_TARGET,
           commentLimit: DIGEST_COMMENT_LIMIT,
           sinceDate,
         },
@@ -71,7 +76,7 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
           )
       );
 
-      let mergedPosts = newPosts;
+      let mergedPosts = [...newPosts].sort((a, b) => (b.votes || 0) - (a.votes || 0));
       if (isIncremental) {
         const existingIds = new Set(existingPosts.map((p) => p.id));
         const trulyNew = newPosts.filter((p) => !existingIds.has(p.id));
@@ -175,7 +180,10 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
         return;
       }
 
-      const subredditsData = pending.subreddits.map((s) => ({ subreddit: s, posts: bySubreddit.get(s).posts }));
+      const subredditsData = pending.subreddits.map((s) => ({
+        subreddit: s,
+        posts: bySubreddit.get(s).posts.slice(0, pending.postCount || DEFAULT_POST_COUNT),
+      }));
       const { answer } = await generateDigest({ subredditsData, query: pending.query, useOwnKnowledge: pending.useOwnKnowledge });
 
       await pool.query('INSERT INTO topic_messages (topic_id, role, content) VALUES ($1,$2,$3)', [topicId, 'assistant', answer]);
@@ -209,19 +217,16 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
       if (!firstMsg) continue;
 
       const waitingOn = await buildWaitingOn(topic.subreddits, topic.user_id);
+      const pendingData = {
+        subreddits: topic.subreddits,
+        query: firstMsg.content,
+        useOwnKnowledge: topic.use_own_knowledge,
+        postCount: topic.post_count,
+      };
       if (waitingOn.size === 0) {
-        finalizeTopic(topic.id, {
-          subreddits: topic.subreddits,
-          query: firstMsg.content,
-          useOwnKnowledge: topic.use_own_knowledge,
-        });
+        finalizeTopic(topic.id, pendingData);
       } else {
-        pendingTopics.set(topic.id, {
-          waitingOn,
-          subreddits: topic.subreddits,
-          query: firstMsg.content,
-          useOwnKnowledge: topic.use_own_knowledge,
-        });
+        pendingTopics.set(topic.id, { waitingOn, ...pendingData });
       }
     }
     processCacheQueue();
@@ -239,7 +244,7 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
       return res.status(429).json({ error: `Вече имаш ${pendingForUser} чакащи тема(и). Изчакай да приключат.` });
     }
 
-    const { subreddits, query, useOwnKnowledge } = req.body || {};
+    const { subreddits, query, useOwnKnowledge, postCount } = req.body || {};
     const cleanSubs = [...new Set((Array.isArray(subreddits) ? subreddits : []).map(sanitizeSubreddit).filter(Boolean))];
     if (!cleanSubs.length) return res.status(400).json({ error: 'Липсва поне един валиден сабредит.' });
     if (cleanSubs.length > MAX_SUBREDDITS) return res.status(400).json({ error: `Максимум ${MAX_SUBREDDITS} сабредита.` });
@@ -248,27 +253,30 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
     if (!cleanQuery) return res.status(400).json({ error: 'Липсва въпрос/тема.' });
     if (cleanQuery.length > 2000) return res.status(400).json({ error: 'Въпросът е твърде дълъг (макс. 2000 символа).' });
 
+    const cleanPostCount = ALLOWED_POST_COUNTS.includes(Number(postCount)) ? Number(postCount) : DEFAULT_POST_COUNT;
+
     const topicId = crypto.randomBytes(8).toString('hex');
     const title = cleanQuery.length > 80 ? cleanQuery.slice(0, 80) + '…' : cleanQuery;
 
     await pool.query(
-      "INSERT INTO topics (id, user_id, title, subreddits, use_own_knowledge, status) VALUES ($1,$2,$3,$4,$5,'running')",
-      [topicId, req.user.id, title, cleanSubs, Boolean(useOwnKnowledge)]
+      "INSERT INTO topics (id, user_id, title, subreddits, use_own_knowledge, post_count, status) VALUES ($1,$2,$3,$4,$5,$6,'running')",
+      [topicId, req.user.id, title, cleanSubs, Boolean(useOwnKnowledge), cleanPostCount]
     );
     await pool.query('INSERT INTO topic_messages (topic_id, role, content) VALUES ($1,$2,$3)', [topicId, 'user', cleanQuery]);
 
     const waitingOn = await buildWaitingOn(cleanSubs, req.user.id);
+    const pendingData = {
+      subreddits: cleanSubs,
+      query: cleanQuery,
+      useOwnKnowledge: Boolean(useOwnKnowledge),
+      postCount: cleanPostCount,
+    };
 
     if (waitingOn.size === 0) {
       // всичко вече е в кеша - генерираме дайджеста веднага (async, не блокираме отговора)
-      finalizeTopic(topicId, { subreddits: cleanSubs, query: cleanQuery, useOwnKnowledge: Boolean(useOwnKnowledge) });
+      finalizeTopic(topicId, pendingData);
     } else {
-      pendingTopics.set(topicId, {
-        waitingOn,
-        subreddits: cleanSubs,
-        query: cleanQuery,
-        useOwnKnowledge: Boolean(useOwnKnowledge),
-      });
+      pendingTopics.set(topicId, { waitingOn, ...pendingData });
       processCacheQueue();
     }
 
@@ -277,7 +285,7 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
 
   router.get('/api/topics', requireAuth, async (req, res) => {
     const result = await pool.query(
-      'SELECT id, title, subreddits, status, created_at, updated_at FROM topics WHERE user_id=$1 ORDER BY updated_at DESC LIMIT 200',
+      'SELECT id, title, subreddits, status, use_own_knowledge, post_count, created_at, updated_at FROM topics WHERE user_id=$1 ORDER BY updated_at DESC LIMIT 200',
       [req.user.id]
     );
     res.json({ topics: result.rows });
@@ -336,7 +344,7 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
       if (rows.length !== found.topic.subreddits.length) {
         return res.status(409).json({ error: 'Липсват кеширани данни за някои от сабредитите на тази тема.' });
       }
-      const subredditsData = rows.map((r) => ({ subreddit: r.subreddit, posts: r.posts }));
+      const subredditsData = rows.map((r) => ({ subreddit: r.subreddit, posts: r.posts.slice(0, found.topic.post_count || DEFAULT_POST_COUNT) }));
 
       await pool.query('INSERT INTO topic_messages (topic_id, role, content) VALUES ($1,$2,$3)', [req.params.id, 'user', cleanContent]);
 

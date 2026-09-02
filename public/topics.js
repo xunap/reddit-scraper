@@ -11,6 +11,7 @@
   const topicSub2 = document.getElementById('topic-sub-2');
   const topicSub3 = document.getElementById('topic-sub-3');
   const topicOwnKnowledge = document.getElementById('topic-own-knowledge');
+  const topicPostCount = document.getElementById('topic-post-count');
 
   const topicThreadPanel = document.getElementById('topic-thread-panel');
   const topicThreadTitle = document.getElementById('topic-thread-title');
@@ -47,7 +48,7 @@
       .map(
         (t) => `
       <div class="history-item${t.id === currentTopicId ? ' active' : ''}" data-topic-id="${t.id}">
-        <div class="h-sub">${escapeHtml(t.title)} <span class="h-status ${t.status}">${I18N.t('status_' + t.status)}</span></div>
+        <div class="h-sub">${t.use_own_knowledge ? `<span class="h-own-knowledge" title="${I18N.t('topic_own_knowledge_badge')}">&#129504;</span> ` : ''}${escapeHtml(t.title)} <span class="h-status ${t.status}">${I18N.t('status_' + t.status)}</span></div>
         <div class="h-meta">
           <span>${t.subreddits.map((s) => 'r/' + escapeHtml(s)).join(', ')}</span>
           <span>${fmtDate(t.updated_at)}</span>
@@ -180,7 +181,12 @@
       const res = await fetch('/api/topics', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subreddits, query: topicQuery.value.trim(), useOwnKnowledge: topicOwnKnowledge.checked }),
+        body: JSON.stringify({
+          subreddits,
+          query: topicQuery.value.trim(),
+          useOwnKnowledge: topicOwnKnowledge.checked,
+          postCount: parseInt(topicPostCount.value, 10),
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || I18N.t('err_topic_create_default'));

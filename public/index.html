@@ -71,13 +71,13 @@
           <form id="topic-form">
             <label class="field">
               <span data-i18n="topic_query_label">Your question / topic</span>
-              <textarea id="topic-query" rows="4" data-i18n-placeholder="topic_query_placeholder" placeholder="E.g.: What treatments actually helped people recover from chronic gastritis?" required></textarea>
+              <textarea id="topic-query" rows="4" required></textarea>
             </label>
 
             <div class="field-row topic-subs-row">
               <label class="field">
                 <span data-i18n="topic_sub1">Subreddit</span>
-                <div class="prefix-input"><span>r/</span><input id="topic-sub-1" type="text" placeholder="gastritis" required autocomplete="off"></div>
+                <div class="prefix-input"><span>r/</span><input id="topic-sub-1" type="text" required autocomplete="off"></div>
               </label>
               <label class="field">
                 <span data-i18n="topic_sub2">Subreddit 2 (optional)</span>
@@ -88,6 +88,16 @@
                 <div class="prefix-input"><span>r/</span><input id="topic-sub-3" type="text" autocomplete="off"></div>
               </label>
             </div>
+
+            <label class="field">
+              <span data-i18n="topic_post_count_label">Number of posts</span>
+              <select id="topic-post-count">
+                <option value="10">10</option>
+                <option value="25" selected>25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+            </label>
 
             <label class="field toggle-field">
               <span class="toggle-switch">
