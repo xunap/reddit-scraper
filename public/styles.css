@@ -183,9 +183,23 @@ textarea{resize:vertical;}
 .prefix-input:focus-within{outline:1.5px solid var(--accent); outline-offset:1px;}
 input:focus, select:focus, textarea:focus{outline:1.5px solid var(--accent); outline-offset:1px; border-color:var(--accent);}
 
-.checkbox-field{flex-direction:row; align-items:flex-start; gap:0.6rem; font-size:0.9rem; color:var(--ink);}
-.checkbox-field input{margin-top:0.2rem; width:auto; box-shadow:none;}
-.checkbox-field em{color:var(--ink-muted); font-style:normal;}
+.toggle-field{flex-direction:row; align-items:flex-start; gap:0.7rem; font-size:0.9rem; color:var(--ink); cursor:pointer;}
+.toggle-copy{padding-top:0.1rem;}
+.toggle-copy em{color:var(--ink-muted); font-style:normal;}
+
+.toggle-switch{position:relative; display:inline-block; flex-shrink:0; width:38px; height:22px; margin-top:0.1rem;}
+.toggle-switch input{position:absolute; inset:0; margin:0; width:100%; height:100%; opacity:0; cursor:pointer; z-index:1;}
+.toggle-track{
+  position:absolute; inset:0; background:var(--border); border-radius:999px; box-shadow:var(--shadow-sm);
+  transition:background-color 0.15s ease;
+}
+.toggle-track::before{
+  content:""; position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%;
+  background:#FFFFFF; box-shadow:0 1px 3px rgba(0,0,0,0.25); transition:transform 0.15s ease;
+}
+.toggle-switch input:checked ~ .toggle-track{background:var(--accent);}
+.toggle-switch input:checked ~ .toggle-track::before{transform:translateX(16px);}
+.toggle-switch input:focus-visible ~ .toggle-track{outline:1.5px solid var(--accent); outline-offset:2px;}
 
 button, .btn{
   border:none; border-radius:8px; padding:0.68rem 1.35rem; font-size:0.95rem; font-weight:600;

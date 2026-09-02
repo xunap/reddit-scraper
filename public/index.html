@@ -89,9 +89,12 @@
               </label>
             </div>
 
-            <label class="field checkbox-field">
-              <input id="topic-own-knowledge" type="checkbox">
-              <span><span data-i18n="qa_own_knowledge_main">Also let the model add its own knowledge</span> <em data-i18n="qa_own_knowledge_sub">(general medical knowledge included - off by default, answers only from Reddit)</em></span>
+            <label class="field toggle-field">
+              <span class="toggle-switch">
+                <input id="topic-own-knowledge" type="checkbox">
+                <span class="toggle-track"></span>
+              </span>
+              <span class="toggle-copy"><span data-i18n="qa_own_knowledge_main">Also let the model add its own knowledge</span> <em data-i18n="qa_own_knowledge_sub">(general medical knowledge included - off by default, answers only from Reddit)</em></span>
             </label>
 
             <button type="submit" id="topic-submit" data-i18n="topic_submit">Start digest</button>
