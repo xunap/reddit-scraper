@@ -94,36 +94,47 @@ async function callOpenRouter(messages) {
   const data = await res.json();
   const answer = data?.choices?.[0]?.message?.content;
   if (!answer) throw new Error('OpenRouter не върна отговор.');
-  return answer;
+  // Моделите на практика игнорират инструкцията "без тирета" доста често -
+  // гарантираме го тук вместо само да разчитаме на prompt-а.
+  return answer.replace(/[–—]/g, '-');
 }
 
-function digestSystemPrompt(subredditNames, useOwnKnowledge, languageLabel) {
+const DEPTH_INSTRUCTIONS = {
+  brief: `Keep the whole answer CONCISE: one short paragraph per section, a few sentences each. Only include the three core sections below - do not add extra subsections.`,
+  standard: `Write a few solid paragraphs per section - more thorough than a one-line summary, but not an exhaustive report. Only include the three core sections below unless the data clearly calls for one more.`,
+  deep: `Write a LONG, COMPREHENSIVE, in-depth report - do not artificially shorten it, this is meant to read like a detailed research write-up. Beyond the three core sections, add as many additional relevant subsections as the data supports and the topic calls for - for example (only include the ones that actually apply): Diet & foods to include/avoid, Supplements & natural remedies mentioned, Medications & medical options mentioned, Lifestyle & stress factors, Suggested action plan / next steps, Red flags & when to see a doctor. Give each subsection several paragraphs of real substance drawn from the posts and comments, not just a bullet or two.`,
+};
+
+function digestSystemPrompt(subredditNames, useOwnKnowledge, languageLabel, depth) {
   const subsLabel = subredditNames.map((s) => `r/${s}`).join(', ');
   const ownKnowledgeRule = useOwnKnowledge
     ? `You may also add your own general knowledge (e.g. medical, technical) when the Reddit content is insufficient - but clearly separate what comes from Reddit ("According to ${subsLabel}...") from your own general knowledge ("In general..." / "From a medical standpoint..."). Never present your own knowledge as if it were a Reddit user's opinion.`
     : `Answer ONLY based on the provided Reddit posts and comments. Do not invent information that isn't in the text, and do not add your own general/expert knowledge. If the data doesn't contain an answer, say so clearly.`;
+  const depthRule = DEPTH_INSTRUCTIONS[depth] || DEPTH_INSTRUCTIONS.standard;
 
   return `You are an assistant that synthesizes the collective opinions/experiences of people from ${subsLabel} on a given topic or question. ${ownKnowledgeRule}
 
-Always structure your response (Markdown) with exactly these three sections, with the section headers translated into the response language:
+${depthRule}
+
+The three core sections (Markdown headers, translated into the response language) are:
 ## Summary
-A short, direct answer to the question/topic, synthesized from the real posts and comments.
+A direct answer to the question/topic, synthesized from the real posts and comments.
 
 ## Consensus / Split of Opinions
 If the question is comparative or "poll-like" by nature (e.g. "what helped people"), give a ROUGH approximate percentage breakdown of the different viewpoints/approaches, based on the sample of posts/comments (e.g. "~60% mention X, ~25% Y, ..."), and explicitly note this is an approximate estimate from a sample, not a scientific poll. If opinions are largely unanimous or too varied to group, say so directly instead of inventing percentages.
 
 ## Examples
-2-4 concrete quotes/examples with links to the posts that illustrate the above.
+Concrete quotes/examples with links to the posts that illustrate the above.
 
-IMPORTANT: The user's question/topic below is written in ${languageLabel}. You MUST write your entire response - including every section header - in ${languageLabel}, regardless of what language these instructions are in. Never use the em dash character or en dash character in your response - always use a regular hyphen (like this one) or split into separate sentences instead. Be honest when the sample is small or insufficient for a strong conclusion.`;
+IMPORTANT: The user's question/topic below is written in ${languageLabel}. You MUST write your entire response - including every section header - in ${languageLabel}, regardless of what language these instructions are in. Never use the em dash character or en dash character in your response - always use a regular hyphen (like this one) or split into separate sentences instead. Be honest when the sample is small or insufficient for a strong conclusion. If the topic touches on physical symptoms that could be a medical emergency or need a professional diagnosis (e.g. chest pain, heart palpitations), note briefly that seeing a doctor directly is worth doing regardless of what Reddit says.`;
 }
 
-async function generateDigest({ subredditsData, query, useOwnKnowledge = false, forceLanguage = null }) {
+async function generateDigest({ subredditsData, query, useOwnKnowledge = false, forceLanguage = null, depth = 'standard' }) {
   const subredditNames = subredditsData.map((s) => s.subreddit);
   const { text: context, summary, truncated } = buildMultiContext(subredditsData);
   const languageLabel = forceLanguage || detectLanguageLabel(query);
 
-  const systemPrompt = digestSystemPrompt(subredditNames, useOwnKnowledge, languageLabel);
+  const systemPrompt = digestSystemPrompt(subredditNames, useOwnKnowledge, languageLabel, depth);
   const userPrompt = `Topic/question: ${query}\n\nData (${summary}${truncated ? ', some posts/comments truncated for length' : ''}):\n\n${context}`;
 
   const answer = await callOpenRouter([
@@ -133,13 +144,13 @@ async function generateDigest({ subredditsData, query, useOwnKnowledge = false, 
   return { answer, summary, truncated };
 }
 
-async function continueTopicChat({ subredditsData, messages, useOwnKnowledge = false }) {
+async function continueTopicChat({ subredditsData, messages, useOwnKnowledge = false, depth = 'standard' }) {
   const subredditNames = subredditsData.map((s) => s.subreddit);
   const { text: context } = buildMultiContext(subredditsData);
   const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user');
   const languageLabel = detectLanguageLabel(lastUserMsg ? lastUserMsg.content : '');
 
-  const systemPrompt = `${digestSystemPrompt(subredditNames, useOwnKnowledge, languageLabel)}\n\nThe user's messages below are a continuation of a conversation on this topic - answer only the latest question, keeping the conversation context in mind. You don't need to repeat the full structure with all sections above for short follow-up questions - answer directly and naturally in ${languageLabel}, unless the question explicitly asks for a new breakdown.\n\nReddit data:\n\n${context}`;
+  const systemPrompt = `${digestSystemPrompt(subredditNames, useOwnKnowledge, languageLabel, depth)}\n\nThe user's messages below are a continuation of a conversation on this topic - answer only the latest question, keeping the conversation context in mind. You don't need to repeat the full structure with all sections above for short follow-up questions - answer directly and naturally in ${languageLabel} at the depth level described above, unless the question explicitly asks for something shorter or longer.\n\nReddit data:\n\n${context}`;
 
   const answer = await callOpenRouter([{ role: 'system', content: systemPrompt }, ...messages]);
   return { answer };

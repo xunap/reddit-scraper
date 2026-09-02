@@ -77,6 +77,7 @@ async function initSchema() {
       subreddits TEXT[] NOT NULL,
       use_own_knowledge BOOLEAN NOT NULL DEFAULT false,
       post_count INTEGER NOT NULL DEFAULT 25,
+      depth TEXT NOT NULL DEFAULT 'standard',
       status TEXT NOT NULL DEFAULT 'queued',
       error TEXT,
       created_at TIMESTAMPTZ DEFAULT now(),
@@ -84,6 +85,7 @@ async function initSchema() {
     );
     ALTER TABLE topics ADD COLUMN IF NOT EXISTS use_own_knowledge BOOLEAN NOT NULL DEFAULT false;
     ALTER TABLE topics ADD COLUMN IF NOT EXISTS post_count INTEGER NOT NULL DEFAULT 25;
+    ALTER TABLE topics ADD COLUMN IF NOT EXISTS depth TEXT NOT NULL DEFAULT 'standard';
     CREATE INDEX IF NOT EXISTS idx_topics_user ON topics(user_id, updated_at DESC);
 
     CREATE TABLE IF NOT EXISTS topic_messages (

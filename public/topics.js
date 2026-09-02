@@ -12,6 +12,7 @@
   const topicSub3 = document.getElementById('topic-sub-3');
   const topicOwnKnowledge = document.getElementById('topic-own-knowledge');
   const topicPostCount = document.getElementById('topic-post-count');
+  const topicDepth = document.getElementById('topic-depth');
 
   const topicThreadPanel = document.getElementById('topic-thread-panel');
   const topicThreadTitle = document.getElementById('topic-thread-title');
@@ -186,6 +187,7 @@
           query: topicQuery.value.trim(),
           useOwnKnowledge: topicOwnKnowledge.checked,
           postCount: parseInt(topicPostCount.value, 10),
+          depth: topicDepth.value,
         }),
       });
       const data = await res.json();
