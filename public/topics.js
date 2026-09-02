@@ -1,18 +1,4 @@
 (function () {
-  const modeTabs = document.querySelectorAll('.mode-tab');
-  const modeDigest = document.getElementById('mode-digest');
-  const modeScraper = document.getElementById('mode-scraper');
-
-  modeTabs.forEach((tab) => {
-    tab.addEventListener('click', () => {
-      modeTabs.forEach((t) => t.classList.remove('active'));
-      tab.classList.add('active');
-      const isDigest = tab.dataset.mode === 'digest';
-      modeDigest.hidden = !isDigest;
-      modeScraper.hidden = isDigest;
-    });
-  });
-
   const topicNewBtn = document.getElementById('topic-new-btn');
   const topicList = document.getElementById('topic-list');
 
@@ -44,7 +30,7 @@
   }
 
   function fmtDate(iso) {
-    if (!iso) return '—';
+    if (!iso) return '-';
     const locale = I18N.getLang() === 'bg' ? 'bg-BG' : 'en-GB';
     return new Date(iso).toLocaleString(locale, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   }

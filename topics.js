@@ -13,7 +13,7 @@ const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 дни
 const MAX_TOPICS_PENDING_PER_USER = 2;
 const MAX_CACHED_POSTS = 150; // таван след merge на инкременталните обновявания
 
-// С малки букви нарочно — Reddit имената на сабредити са case-insensitive,
+// С малки букви нарочно - Reddit имената на сабредити са case-insensitive,
 // а нормализирането максимизира cache hit-овете между различни потребители.
 function sanitizeSubreddit(raw) {
   return String(raw || '').trim().replace(/^\/?r\//i, '').replace(/[^a-zA-Z0-9_]/g, '').toLowerCase();
@@ -44,7 +44,7 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
     if (!row) return;
 
     // Ако вече имаме постове от преди, това е опресняване на остарял кеш, не
-    // първо скрейпване — скрейпваме само НОВИ постове (sort=new, отрязано на
+    // първо скрейпване - скрейпваме само НОВИ постове (sort=new, отрязано на
     // датата на последното скрейпване) вместо да теглим всичко наново.
     // Коментарите на вече познатите постове НЕ се опресняват (виж бележката
     // в getOrCreateCacheEntry/README на функцията по-долу).
@@ -110,7 +110,7 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
     let row = existing;
     if (!row) {
       // ON CONFLICT DO NOTHING покрива race-а, когато два topic-а поискат
-      // едновременно същия сабредит — при конфликт просто препрочитаме реда.
+      // едновременно същия сабредит - при конфликт просто препрочитаме реда.
       const inserted = (
         await pool.query(
           `INSERT INTO subreddit_cache (subreddit, sort, time_filter, comment_mode, status, scraped_by)
@@ -128,7 +128,7 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
           )
         ).rows[0];
     } else if (row.status !== 'queued' && row.status !== 'running') {
-      // остаряло или гръмнало преди — пускаме нов опит
+      // остаряло или гръмнало преди - пускаме нов опит
       row = (
         await pool.query("UPDATE subreddit_cache SET status='queued', error=NULL WHERE id=$1 RETURNING *", [row.id])
       ).rows[0];
@@ -260,7 +260,7 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
     const waitingOn = await buildWaitingOn(cleanSubs, req.user.id);
 
     if (waitingOn.size === 0) {
-      // всичко вече е в кеша — генерираме дайджеста веднага (async, не блокираме отговора)
+      // всичко вече е в кеша - генерираме дайджеста веднага (async, не блокираме отговора)
       finalizeTopic(topicId, { subreddits: cleanSubs, query: cleanQuery, useOwnKnowledge: Boolean(useOwnKnowledge) });
     } else {
       pendingTopics.set(topicId, {

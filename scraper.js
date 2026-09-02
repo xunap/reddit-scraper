@@ -68,7 +68,7 @@ async function extractTopComments(page, max) {
     return [];
   }
 
-  // За по-големи заявки Reddit lazy-load-ва коментарите при скрол — опитваме
+  // За по-големи заявки Reddit lazy-load-ва коментарите при скрол - опитваме
   // се да ги "изкараме" преди да ги извлечем.
   if (max > 15) {
     let stagnant = 0;

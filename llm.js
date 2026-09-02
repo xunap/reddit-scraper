@@ -100,7 +100,7 @@ async function callOpenRouter(messages) {
 function digestSystemPrompt(subredditNames, useOwnKnowledge, languageLabel) {
   const subsLabel = subredditNames.map((s) => `r/${s}`).join(', ');
   const ownKnowledgeRule = useOwnKnowledge
-    ? `You may also add your own general knowledge (e.g. medical, technical) when the Reddit content is insufficient — but clearly separate what comes from Reddit ("According to ${subsLabel}...") from your own general knowledge ("In general..." / "From a medical standpoint..."). Never present your own knowledge as if it were a Reddit user's opinion.`
+    ? `You may also add your own general knowledge (e.g. medical, technical) when the Reddit content is insufficient - but clearly separate what comes from Reddit ("According to ${subsLabel}...") from your own general knowledge ("In general..." / "From a medical standpoint..."). Never present your own knowledge as if it were a Reddit user's opinion.`
     : `Answer ONLY based on the provided Reddit posts and comments. Do not invent information that isn't in the text, and do not add your own general/expert knowledge. If the data doesn't contain an answer, say so clearly.`;
 
   return `You are an assistant that synthesizes the collective opinions/experiences of people from ${subsLabel} on a given topic or question. ${ownKnowledgeRule}
@@ -115,7 +115,7 @@ If the question is comparative or "poll-like" by nature (e.g. "what helped peopl
 ## Examples
 2-4 concrete quotes/examples with links to the posts that illustrate the above.
 
-IMPORTANT: The user's question/topic below is written in ${languageLabel}. You MUST write your entire response — including every section header — in ${languageLabel}, regardless of what language these instructions are in. Be honest when the sample is small or insufficient for a strong conclusion.`;
+IMPORTANT: The user's question/topic below is written in ${languageLabel}. You MUST write your entire response - including every section header - in ${languageLabel}, regardless of what language these instructions are in. Never use the em dash character or en dash character in your response - always use a regular hyphen (like this one) or split into separate sentences instead. Be honest when the sample is small or insufficient for a strong conclusion.`;
 }
 
 async function generateDigest({ subredditsData, query, useOwnKnowledge = false, forceLanguage = null }) {
@@ -139,7 +139,7 @@ async function continueTopicChat({ subredditsData, messages, useOwnKnowledge = f
   const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user');
   const languageLabel = detectLanguageLabel(lastUserMsg ? lastUserMsg.content : '');
 
-  const systemPrompt = `${digestSystemPrompt(subredditNames, useOwnKnowledge, languageLabel)}\n\nThe user's messages below are a continuation of a conversation on this topic — answer only the latest question, keeping the conversation context in mind. You don't need to repeat the full structure with all sections above for short follow-up questions — answer directly and naturally in ${languageLabel}, unless the question explicitly asks for a new breakdown.\n\nReddit data:\n\n${context}`;
+  const systemPrompt = `${digestSystemPrompt(subredditNames, useOwnKnowledge, languageLabel)}\n\nThe user's messages below are a continuation of a conversation on this topic - answer only the latest question, keeping the conversation context in mind. You don't need to repeat the full structure with all sections above for short follow-up questions - answer directly and naturally in ${languageLabel}, unless the question explicitly asks for a new breakdown.\n\nReddit data:\n\n${context}`;
 
   const answer = await callOpenRouter([{ role: 'system', content: systemPrompt }, ...messages]);
   return { answer };
@@ -150,8 +150,8 @@ async function askAboutPosts({ posts, question, subreddit, useOwnKnowledge = fal
   const languageLabel = detectLanguageLabel(question);
 
   const systemPrompt = useOwnKnowledge
-    ? `You are an assistant that answers questions based on the provided Reddit posts and comments from r/${subreddit}, but may also add your own general knowledge (e.g. medical, technical) when the Reddit content is insufficient. Clearly separate in your answer what comes from the Reddit discussion ("According to r/${subreddit}...") from your own general knowledge ("In general..." / "From a medical standpoint..."). Never present your own knowledge as if it were a Reddit user's opinion. Format the response with structured Markdown (headers, bullet points, bold text where appropriate). IMPORTANT: the question below is written in ${languageLabel} — you MUST answer entirely in ${languageLabel}.`
-    : `You are an assistant that answers questions ONLY based on the provided Reddit posts and comments from r/${subreddit}. Do not invent information that isn't in the text, and do not add your own general/expert knowledge. If the data doesn't contain an answer, say so clearly. Format the response with structured Markdown (headers, bullet points, bold text where appropriate). IMPORTANT: the question below is written in ${languageLabel} — you MUST answer entirely in ${languageLabel}.`;
+    ? `You are an assistant that answers questions based on the provided Reddit posts and comments from r/${subreddit}, but may also add your own general knowledge (e.g. medical, technical) when the Reddit content is insufficient. Clearly separate in your answer what comes from the Reddit discussion ("According to r/${subreddit}...") from your own general knowledge ("In general..." / "From a medical standpoint..."). Never present your own knowledge as if it were a Reddit user's opinion. Format the response with structured Markdown (headers, bullet points, bold text where appropriate). IMPORTANT: the question below is written in ${languageLabel} - you MUST answer entirely in ${languageLabel}. Never use the em dash character or en dash character in your response - always use a regular hyphen (like this one) instead.`
+    : `You are an assistant that answers questions ONLY based on the provided Reddit posts and comments from r/${subreddit}. Do not invent information that isn't in the text, and do not add your own general/expert knowledge. If the data doesn't contain an answer, say so clearly. Format the response with structured Markdown (headers, bullet points, bold text where appropriate). IMPORTANT: the question below is written in ${languageLabel} - you MUST answer entirely in ${languageLabel}. Never use the em dash character or en dash character in your response - always use a regular hyphen (like this one) instead.`;
 
   const userPrompt = `Data from r/${subreddit} (${includedCount} of ${totalCount} posts${truncated ? ', some posts/comments truncated for length' : ''}):\n\n${context}\n\n---\n\nQuestion: ${question}`;
 

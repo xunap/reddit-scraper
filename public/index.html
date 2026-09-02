@@ -59,13 +59,7 @@
 
   <!-- ===== APP ===== -->
   <main class="app-shell" id="app-view" hidden>
-    <div class="mode-tabs">
-      <button type="button" class="mode-tab active" data-mode="digest" data-i18n="mode_tab_digest">Topic Digest</button>
-      <button type="button" class="mode-tab" data-mode="scraper" data-i18n="mode_tab_scraper">Raw Scraper</button>
-    </div>
-
-    <!-- ===== TOPIC DIGEST MODE ===== -->
-    <div class="app-layout" id="mode-digest">
+    <div class="app-layout">
       <aside class="panel history-panel">
         <button type="button" id="topic-new-btn" class="btn-new-topic">+ <span data-i18n="topic_new">New topic</span></button>
         <div id="topic-list" class="history-list"></div>
@@ -97,7 +91,7 @@
 
             <label class="field checkbox-field">
               <input id="topic-own-knowledge" type="checkbox">
-              <span><span data-i18n="qa_own_knowledge_main">Also let the model add its own knowledge</span> <em data-i18n="qa_own_knowledge_sub">(e.g. general medical knowledge — off by default, answers only from Reddit)</em></span>
+              <span><span data-i18n="qa_own_knowledge_main">Also let the model add its own knowledge</span> <em data-i18n="qa_own_knowledge_sub">(general medical knowledge included - off by default, answers only from Reddit)</em></span>
             </label>
 
             <button type="submit" id="topic-submit" data-i18n="topic_submit">Start digest</button>
@@ -119,123 +113,6 @@
           <p class="form-error" id="topic-thread-error" hidden></p>
         </section>
       </div>
-    </div>
-
-    <!-- ===== RAW SCRAPER MODE ===== -->
-    <div class="app-layout" id="mode-scraper" hidden>
-    <aside class="panel history-panel">
-      <h2 data-i18n="history_title">History</h2>
-      <div id="history-list" class="history-list"></div>
-    </aside>
-
-    <div class="main-col">
-      <section class="panel form-panel">
-        <h1 data-i18n="form_title">Scrape a subreddit</h1>
-        <form id="scrape-form">
-          <label class="field">
-            <span data-i18n="field_subreddit">Subreddit</span>
-            <div class="prefix-input">
-              <span>r/</span>
-              <input id="subreddit" name="subreddit" type="text" placeholder="Bulgaria" required autocomplete="off">
-            </div>
-          </label>
-
-          <div class="field-row">
-            <label class="field">
-              <span data-i18n="field_sort">Sort</span>
-              <select id="sort" name="sort">
-                <option value="hot">Hot</option>
-                <option value="new">New</option>
-                <option value="top" selected>Top</option>
-              </select>
-            </label>
-            <label class="field" id="timefilter-field">
-              <span data-i18n="field_period">Time period</span>
-              <select id="timeFilter" name="timeFilter">
-                <option value="all" selected data-i18n="opt_all_time">All time</option>
-                <option value="year" data-i18n="opt_year">Year</option>
-                <option value="month" data-i18n="opt_month">Month</option>
-                <option value="week" data-i18n="opt_week">Week</option>
-                <option value="day" data-i18n="opt_day">Day</option>
-                <option value="hour" data-i18n="opt_hour">Hour</option>
-              </select>
-            </label>
-          </div>
-
-          <label class="field">
-            <span data-i18n="field_comment_mode">Comments to include</span>
-            <select id="commentMode" name="commentMode">
-              <option value="none" selected data-i18n="opt_comments_none">None (fastest, list only)</option>
-              <option value="body" data-i18n="opt_comments_body">Title + post text only</option>
-              <option value="top3" data-i18n="opt_comments_top3">Title + post text + top 3 comments</option>
-              <option value="top10" data-i18n="opt_comments_top10">Title + post text + top 10 comments</option>
-              <option value="top25" data-i18n="opt_comments_top25">Title + post text + top 25 comments</option>
-              <option value="top50" data-i18n="opt_comments_top50">Title + post text + top 50 comments</option>
-              <option value="top100" data-i18n="opt_comments_top100">Title + post text + top 100 comments</option>
-              <option value="all" data-i18n="opt_comments_all">Title + post text + all comments</option>
-            </select>
-          </label>
-
-          <label class="field">
-            <span id="limit-label">Number of posts</span>
-            <input id="limit" name="limit" type="number" min="1" max="300" value="50">
-          </label>
-
-          <button type="submit" id="submit-btn" data-i18n="btn_start_scrape">Start scraping</button>
-          <p class="form-error" id="form-error" hidden></p>
-        </form>
-      </section>
-
-      <section class="panel status-panel" id="status-panel" hidden>
-        <div class="status-head">
-          <h2 id="status-title" data-i18n="status_title_default">Scraping...</h2>
-          <span class="badge" id="status-badge">running</span>
-        </div>
-        <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
-        <p class="progress-label" id="progress-label"></p>
-        <pre class="log-box" id="log-box"></pre>
-      </section>
-
-      <section class="panel results-panel" id="results-panel" hidden>
-        <div class="results-head">
-          <h2 data-i18n="results_title">Results</h2>
-          <div class="stats" id="stats-row"></div>
-          <div class="actions">
-            <a class="btn" id="download-json" data-i18n="btn_download_json">Download JSON</a>
-            <a class="btn" id="download-csv" data-i18n="btn_download_csv">Download CSV</a>
-          </div>
-        </div>
-        <div class="table-wrap">
-          <table id="results-table">
-            <thead>
-              <tr>
-                <th data-key="title" data-i18n="th_title">Title</th>
-                <th data-key="author" data-i18n="th_author">Author</th>
-                <th data-key="votes" class="num" data-i18n="th_votes">Votes</th>
-                <th data-key="comments" class="num" data-i18n="th_comments">Comments</th>
-                <th data-key="date" data-i18n="th_date">Date</th>
-              </tr>
-            </thead>
-            <tbody id="results-tbody"></tbody>
-          </table>
-        </div>
-      </section>
-
-      <section class="panel qa-panel" id="qa-panel" hidden>
-        <h2 data-i18n="qa_title">Ask about the data</h2>
-        <p class="qa-hint" id="qa-hint"></p>
-        <div id="qa-thread" class="qa-thread"></div>
-        <form id="qa-form" class="qa-form">
-          <textarea id="qa-input" data-i18n-placeholder="qa_placeholder" placeholder="E.g.: What are the three most common complaints in the comments?" rows="4" required></textarea>
-          <label class="field checkbox-field">
-            <input id="qa-own-knowledge" type="checkbox">
-            <span><span data-i18n="qa_own_knowledge_main">Also let the model add its own knowledge</span> <em data-i18n="qa_own_knowledge_sub">(e.g. general medical knowledge — off by default, answers only from Reddit)</em></span>
-          </label>
-          <button type="submit" id="qa-submit" data-i18n="btn_ask">Ask</button>
-        </form>
-        <p class="form-error" id="qa-error" hidden></p>
-      </section>
-    </div>
     </div>
   </main>
 

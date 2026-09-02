@@ -153,11 +153,7 @@ body{
 .qa-answer code{background:var(--mono-bg); padding:0.1em 0.35em; border-radius:4px; font-size:0.85em;}
 .qa-meta{font-size:0.72rem; color:var(--ink-muted);}
 .qa-form{display:flex; gap:0.6rem; align-items:flex-end;}
-.qa-form textarea{
-  flex:1; border:1px solid var(--border); border-radius:6px; padding:0.6rem 0.8rem; font-family:inherit;
-  font-size:0.92rem; background:var(--bg); color:var(--ink); resize:vertical; min-height:2.6rem;
-}
-.qa-form textarea:focus{outline:1.5px solid var(--accent); outline-offset:1px;}
+.qa-form textarea{flex:1; min-height:2.6rem;}
 .qa-thinking{color:var(--ink-muted); font-size:0.85rem; font-style:italic;}
 
 @media (max-width:880px){
@@ -174,17 +170,18 @@ h2{font-size:1.1rem; margin:0;}
 .field{display:flex; flex-direction:column; gap:0.35rem; margin-bottom:1rem; font-size:0.85rem; color:var(--ink-muted);}
 .field-row{display:flex; gap:1rem;}
 .field-row .field{flex:1;}
-input[type=text], input[type=number], input[type=email], input[type=password], select{
+input[type=text], input[type=number], input[type=email], input[type=password], select, textarea{
   border:1px solid var(--border); border-radius:8px; padding:0.72rem 0.9rem; font-size:0.98rem;
   background:var(--field-bg); color:var(--ink); font-family:inherit; width:100%;
   box-shadow:var(--shadow-sm); transition:border-color 0.15s ease, box-shadow 0.15s ease;
 }
+textarea{resize:vertical;}
 .prefix-input{display:flex; align-items:center; border:1px solid var(--border); border-radius:8px; background:var(--field-bg); overflow:hidden; box-shadow:var(--shadow-sm);}
 .prefix-input span{padding:0 0 0 0.9rem; color:var(--ink-muted);}
 .prefix-input input{border:none; background:transparent; flex:1; padding:0.72rem 0.9rem; box-shadow:none;}
 .prefix-input input:focus{outline:none;}
 .prefix-input:focus-within{outline:1.5px solid var(--accent); outline-offset:1px;}
-input:focus, select:focus{outline:1.5px solid var(--accent); outline-offset:1px; border-color:var(--accent);}
+input:focus, select:focus, textarea:focus{outline:1.5px solid var(--accent); outline-offset:1px; border-color:var(--accent);}
 
 .checkbox-field{flex-direction:row; align-items:flex-start; gap:0.6rem; font-size:0.9rem; color:var(--ink);}
 .checkbox-field input{margin-top:0.2rem; width:auto; box-shadow:none;}
@@ -202,7 +199,6 @@ button:active, .btn:active{transform:translateY(0); filter:brightness(0.97); box
 button:disabled{opacity:0.5; cursor:not-allowed; transform:none; filter:none;}
 .form-error{color:var(--err-ink); font-size:0.88rem; margin-top:0.8rem;}
 
-.status-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem;}
 .badge{
   font-family:ui-monospace, monospace; font-size:0.75rem; padding:0.2rem 0.6rem; border-radius:999px;
   text-transform:uppercase; letter-spacing:0.04em;
@@ -211,29 +207,9 @@ button:disabled{opacity:0.5; cursor:not-allowed; transform:none; filter:none;}
 .badge.done{background:var(--ok-bg); color:var(--ok-ink);}
 .badge.error{background:var(--err-bg); color:var(--err-ink);}
 
-.progress-track{height:8px; border-radius:999px; background:var(--border); overflow:hidden; margin-bottom:0.5rem;}
-.progress-fill{height:100%; width:0%; background:var(--accent); transition:width 0.3s ease;}
 .progress-label{color:var(--ink-muted); font-size:0.85rem; margin:0 0 1rem;}
-.log-box{
-  background:var(--mono-bg); border:1px solid var(--border); border-radius:6px; padding:0.8rem 1rem;
-  font-family:ui-monospace, "IBM Plex Mono", monospace; font-size:0.8rem; max-height:260px; overflow-y:auto;
-  white-space:pre-wrap; margin:0; color:var(--ink-muted);
-}
 
 .results-head{display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:1rem; margin-bottom:1.2rem;}
-.stats{display:flex; gap:1.4rem; font-size:0.85rem; color:var(--ink-muted);}
-.stats b{color:var(--ink); font-variant-numeric:tabular-nums;}
-.actions{display:flex; gap:0.6rem;}
-
-.table-wrap{overflow-x:auto;}
-table{border-collapse:collapse; width:100%; font-size:0.88rem;}
-th, td{text-align:left; padding:0.55rem 0.7rem; border-bottom:1px solid var(--border); white-space:nowrap;}
-th{color:var(--ink-muted); font-size:0.75rem; text-transform:uppercase; letter-spacing:0.04em; cursor:pointer; user-select:none;}
-th.num, td.num{text-align:right; font-variant-numeric:tabular-nums;}
-td.title-cell{white-space:normal; max-width:420px;}
-td.title-cell a{color:var(--ink); text-decoration:none;}
-td.title-cell a:hover{color:var(--accent);}
-tbody tr:hover{background:var(--bg);}
 
 @media (max-width:640px){
   .field-row{flex-direction:column;}
