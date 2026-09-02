@@ -1,5 +1,6 @@
 require('dotenv').config({ quiet: true, override: true });
 const path = require('path');
+const fs = require('fs');
 const crypto = require('crypto');
 const express = require('express');
 const cookieParser = require('cookie-parser');
@@ -393,12 +394,33 @@ app.get('/api/history', requireAuth, async (req, res) => {
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
+// ===================== DEV LIVE-RELOAD =====================
+// Само локално (NODE_ENV !== 'production'): при промяна във public/ бутваме
+// съобщение по WebSocket, а при рестарт на самия сървър (nodemon) връзката
+// пада и клиентският скрипт презарежда страницата щом успее да се свърже пак.
+function setupDevReload(httpServer) {
+  if (process.env.NODE_ENV === 'production') return;
+  const { WebSocketServer } = require('ws');
+  const wss = new WebSocketServer({ noServer: true });
+  httpServer.on('upgrade', (req, socket, head) => {
+    if (req.url !== '/__dev_reload') return;
+    wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws));
+  });
+  fs.watch(path.join(__dirname, 'public'), { recursive: true }, () => {
+    for (const client of wss.clients) {
+      if (client.readyState === client.OPEN) client.send('reload');
+    }
+  });
+  console.log('Dev live-reload: enabled (watching public/)');
+}
+
 initSchema()
   .then(() => {
-    app.listen(PORT, () => {
+    const httpServer = app.listen(PORT, () => {
       console.log(`Reddit Scraper App listening on port ${PORT}`);
       console.log(`Google login: ${GOOGLE_ENABLED ? 'enabled' : 'disabled'}, LLM Q&A: ${LLM_ENABLED ? 'enabled' : 'disabled'}`);
     });
+    setupDevReload(httpServer);
   })
   .catch((err) => {
     console.error('Неуспешна инициализация на базата данни:', err);

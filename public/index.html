@@ -170,5 +170,22 @@
   </main>
 
   <script src="/app.js"></script>
+  <script>
+    // Dev-only auto-reload: активен само на localhost, няма ефект на реалния домейн.
+    (function () {
+      if (!/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) return;
+      function connect() {
+        const ws = new WebSocket(`ws://${location.host}/__dev_reload`);
+        ws.onmessage = (e) => { if (e.data === 'reload') location.reload(); };
+        ws.onclose = () => setTimeout(retryUntilBack, 500);
+      }
+      function retryUntilBack() {
+        const ws = new WebSocket(`ws://${location.host}/__dev_reload`);
+        ws.onopen = () => location.reload();
+        ws.onerror = () => setTimeout(retryUntilBack, 500);
+      }
+      connect();
+    })();
+  </script>
 </body>
 </html>
