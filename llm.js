@@ -65,6 +65,13 @@ function buildMultiContext(subredditsData) {
   return { text: sections.join('\n\n'), summary: summary.join(', '), truncated: anyTruncated };
 }
 
+// Проста евристика EN/BG (единствените езици в UI-то): кирилица -> български.
+// Явно назоваване на целевия език в prompt-а е много по-надеждно от разчитане
+// моделът сам да го извлече от съдържанието на въпроса.
+function detectLanguageLabel(text) {
+  return /[Ѐ-ӿ]/.test(text || '') ? 'Bulgarian' : 'English';
+}
+
 async function callOpenRouter(messages) {
   if (!LLM_ENABLED) {
     throw new Error('OPENROUTER_API_KEY не е конфигуриран на сървъра.');
@@ -90,33 +97,34 @@ async function callOpenRouter(messages) {
   return answer;
 }
 
-function digestSystemPrompt(subredditNames, useOwnKnowledge) {
+function digestSystemPrompt(subredditNames, useOwnKnowledge, languageLabel) {
   const subsLabel = subredditNames.map((s) => `r/${s}`).join(', ');
   const ownKnowledgeRule = useOwnKnowledge
-    ? `Може да добавяш и собствени общи знания (напр. медицински, технически), когато съдържанието от Reddit е недостатъчно — но ясно разграничавай кое идва от Reddit ("Според ${subsLabel}...") и кое е твое общо знание ("Общо взето..." / "От медицинска гледна точка..."). Никога не представяй собствено знание като мнение на Reddit потребители.`
-    : `Отговаряй САМО въз основа на предоставените Reddit постове и коментари. Не измисляй информация, която не е в текста, и не добавяй собствени общи/експертни знания. Ако данните не съдържат отговор, кажи го ясно.`;
+    ? `You may also add your own general knowledge (e.g. medical, technical) when the Reddit content is insufficient — but clearly separate what comes from Reddit ("According to ${subsLabel}...") from your own general knowledge ("In general..." / "From a medical standpoint..."). Never present your own knowledge as if it were a Reddit user's opinion.`
+    : `Answer ONLY based on the provided Reddit posts and comments. Do not invent information that isn't in the text, and do not add your own general/expert knowledge. If the data doesn't contain an answer, say so clearly.`;
 
-  return `Ти си асистент, който обобщава колективното мнение/опит на хората от ${subsLabel} по зададена тема или въпрос. ${ownKnowledgeRule}
+  return `You are an assistant that synthesizes the collective opinions/experiences of people from ${subsLabel} on a given topic or question. ${ownKnowledgeRule}
 
-Структурирай ВИНАГИ отговора си (Markdown) с точно тези секции:
-## Обобщение
-Кратък директен отговор на въпроса/темата, синтезиран от реалните постове и коментари.
+Always structure your response (Markdown) with exactly these three sections, with the section headers translated into the response language:
+## Summary
+A short, direct answer to the question/topic, synthesized from the real posts and comments.
 
-## Консенсус / разпределение на мненията
-Ако въпросът е сравнителен или "анкетен" по природа (напр. "какво е помогнало на хората"), дай ГРУБА приблизителна процентна разбивка на различните гледни точки/подходи, base-нато на извадката от постове/коментари (напр. "~60% споменават X, ~25% Y, останалите...") и изрично отбележи, че това е приблизителна оценка от извадка, не научна анкета. Ако мненията са до голяма степен единодушни или твърде разнородни за групиране, кажи го направо вместо да измисляш проценти.
+## Consensus / Split of Opinions
+If the question is comparative or "poll-like" by nature (e.g. "what helped people"), give a ROUGH approximate percentage breakdown of the different viewpoints/approaches, based on the sample of posts/comments (e.g. "~60% mention X, ~25% Y, ..."), and explicitly note this is an approximate estimate from a sample, not a scientific poll. If opinions are largely unanimous or too varied to group, say so directly instead of inventing percentages.
 
-## Примери
-2-4 конкретни цитата/примера с линкове към постовете, които илюстрират горното.
+## Examples
+2-4 concrete quotes/examples with links to the posts that illustrate the above.
 
-Отговори на същия език, на който е зададен въпросът/темата. Бъди честен кога извадката е малка или недостатъчна за силен извод.`;
+IMPORTANT: The user's question/topic below is written in ${languageLabel}. You MUST write your entire response — including every section header — in ${languageLabel}, regardless of what language these instructions are in. Be honest when the sample is small or insufficient for a strong conclusion.`;
 }
 
-async function generateDigest({ subredditsData, query, useOwnKnowledge = false }) {
+async function generateDigest({ subredditsData, query, useOwnKnowledge = false, forceLanguage = null }) {
   const subredditNames = subredditsData.map((s) => s.subreddit);
   const { text: context, summary, truncated } = buildMultiContext(subredditsData);
+  const languageLabel = forceLanguage || detectLanguageLabel(query);
 
-  const systemPrompt = digestSystemPrompt(subredditNames, useOwnKnowledge);
-  const userPrompt = `Тема/въпрос: ${query}\n\nДанни (${summary}${truncated ? ', някои постове/коментари са отрязани заради дължина' : ''}):\n\n${context}`;
+  const systemPrompt = digestSystemPrompt(subredditNames, useOwnKnowledge, languageLabel);
+  const userPrompt = `Topic/question: ${query}\n\nData (${summary}${truncated ? ', some posts/comments truncated for length' : ''}):\n\n${context}`;
 
   const answer = await callOpenRouter([
     { role: 'system', content: systemPrompt },
@@ -128,8 +136,10 @@ async function generateDigest({ subredditsData, query, useOwnKnowledge = false }
 async function continueTopicChat({ subredditsData, messages, useOwnKnowledge = false }) {
   const subredditNames = subredditsData.map((s) => s.subreddit);
   const { text: context } = buildMultiContext(subredditsData);
+  const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user');
+  const languageLabel = detectLanguageLabel(lastUserMsg ? lastUserMsg.content : '');
 
-  const systemPrompt = `${digestSystemPrompt(subredditNames, useOwnKnowledge)}\n\nПод-въпросите на потребителя по-долу са продължение на разговор по тази тема — отговаряй само на последния въпрос, като имаш предвид контекста на разговора. Не е нужно да повтаряш пълната структура с всичките секции по-горе за кратки follow-up въпроси — отговори директно и естествено, освен ако въпросът изрично не иска нова разбивка.\n\nДанни от Reddit:\n\n${context}`;
+  const systemPrompt = `${digestSystemPrompt(subredditNames, useOwnKnowledge, languageLabel)}\n\nThe user's messages below are a continuation of a conversation on this topic — answer only the latest question, keeping the conversation context in mind. You don't need to repeat the full structure with all sections above for short follow-up questions — answer directly and naturally in ${languageLabel}, unless the question explicitly asks for a new breakdown.\n\nReddit data:\n\n${context}`;
 
   const answer = await callOpenRouter([{ role: 'system', content: systemPrompt }, ...messages]);
   return { answer };
@@ -137,12 +147,13 @@ async function continueTopicChat({ subredditsData, messages, useOwnKnowledge = f
 
 async function askAboutPosts({ posts, question, subreddit, useOwnKnowledge = false }) {
   const { text: context, includedCount, totalCount, truncated } = buildContext(posts);
+  const languageLabel = detectLanguageLabel(question);
 
   const systemPrompt = useOwnKnowledge
-    ? `Ти си асистент, който отговаря на въпроси на база предоставените Reddit постове и коментари от r/${subreddit}, но може да добавя и собствени общи знания (напр. медицински, технически и т.н.), когато Reddit съдържанието е недостатъчно. Ясно разграничавай в отговора кое идва от Reddit дискусията ("Според r/${subreddit}...") и кое е твое общо знание ("Общо взето..." / "От медицинска гледна точка..."). Никога не представяй собствено знание като мнение на Reddit потребители. Форматирай отговора структурирано (Markdown: заглавия, bullet точки, удебелен текст където е уместно). Отговори на същия език, на който е зададен въпросът.`
-    : `Ти си асистент, който отговаря на въпроси САМО въз основа на предоставените Reddit постове и коментари от r/${subreddit}. Не измисляй информация, която не е в текста, и не добавяй собствени общи/експертни знания. Ако данните не съдържат отговор, кажи го ясно. Форматирай отговора структурирано (Markdown: заглавия, bullet точки, удебелен текст където е уместно). Отговори на същия език, на който е зададен въпросът.`;
+    ? `You are an assistant that answers questions based on the provided Reddit posts and comments from r/${subreddit}, but may also add your own general knowledge (e.g. medical, technical) when the Reddit content is insufficient. Clearly separate in your answer what comes from the Reddit discussion ("According to r/${subreddit}...") from your own general knowledge ("In general..." / "From a medical standpoint..."). Never present your own knowledge as if it were a Reddit user's opinion. Format the response with structured Markdown (headers, bullet points, bold text where appropriate). IMPORTANT: the question below is written in ${languageLabel} — you MUST answer entirely in ${languageLabel}.`
+    : `You are an assistant that answers questions ONLY based on the provided Reddit posts and comments from r/${subreddit}. Do not invent information that isn't in the text, and do not add your own general/expert knowledge. If the data doesn't contain an answer, say so clearly. Format the response with structured Markdown (headers, bullet points, bold text where appropriate). IMPORTANT: the question below is written in ${languageLabel} — you MUST answer entirely in ${languageLabel}.`;
 
-  const userPrompt = `Данни от r/${subreddit} (${includedCount} от общо ${totalCount} поста${truncated ? ', някои постове/коментари са отрязани заради дължина' : ''}):\n\n${context}\n\n---\n\nВъпрос: ${question}`;
+  const userPrompt = `Data from r/${subreddit} (${includedCount} of ${totalCount} posts${truncated ? ', some posts/comments truncated for length' : ''}):\n\n${context}\n\n---\n\nQuestion: ${question}`;
 
   const answer = await callOpenRouter([
     { role: 'system', content: systemPrompt },
