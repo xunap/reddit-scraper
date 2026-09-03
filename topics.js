@@ -5,7 +5,8 @@ const { generateDigest, continueTopicChat, LLM_ENABLED } = require('./llm');
 
 const MAX_SUBREDDITS = 10;
 const DIGEST_SORT = 'top';
-const DIGEST_TIME_FILTER = 'all';
+const ALLOWED_TIME_FILTERS = ['all', 'year', 'month', 'week', 'day', 'hour'];
+const DEFAULT_TIME_FILTER = 'all';
 const DIGEST_COMMENT_MODE = 'top50';
 const DIGEST_COMMENT_LIMIT = 50;
 // Кешът винаги се опитва да събере до толкова РЕАЛНИ (не-меме) постове на
@@ -100,11 +101,11 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
     }
   }
 
-  async function getOrCreateCacheEntry(subreddit, userId) {
+  async function getOrCreateCacheEntry(subreddit, userId, timeFilter) {
     const existing = (
       await pool.query(
         'SELECT * FROM subreddit_cache WHERE subreddit=$1 AND sort=$2 AND time_filter=$3 AND comment_mode=$4',
-        [subreddit, DIGEST_SORT, DIGEST_TIME_FILTER, DIGEST_COMMENT_MODE]
+        [subreddit, DIGEST_SORT, timeFilter, DIGEST_COMMENT_MODE]
       )
     ).rows[0];
 
@@ -121,7 +122,7 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
           `INSERT INTO subreddit_cache (subreddit, sort, time_filter, comment_mode, status, scraped_by)
            VALUES ($1,$2,$3,$4,'queued',$5)
            ON CONFLICT (subreddit, sort, time_filter, comment_mode) DO NOTHING RETURNING *`,
-          [subreddit, DIGEST_SORT, DIGEST_TIME_FILTER, DIGEST_COMMENT_MODE, userId]
+          [subreddit, DIGEST_SORT, timeFilter, DIGEST_COMMENT_MODE, userId]
         )
       ).rows[0];
       row =
@@ -129,7 +130,7 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
         (
           await pool.query(
             'SELECT * FROM subreddit_cache WHERE subreddit=$1 AND sort=$2 AND time_filter=$3 AND comment_mode=$4',
-            [subreddit, DIGEST_SORT, DIGEST_TIME_FILTER, DIGEST_COMMENT_MODE]
+            [subreddit, DIGEST_SORT, timeFilter, DIGEST_COMMENT_MODE]
           )
         ).rows[0];
     } else if (row.status !== 'queued' && row.status !== 'running') {
@@ -143,10 +144,10 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
     return row;
   }
 
-  async function buildWaitingOn(subreddits, userId) {
+  async function buildWaitingOn(subreddits, userId, timeFilter) {
     const waitingOn = new Set();
     for (const sub of subreddits) {
-      const row = await getOrCreateCacheEntry(sub, userId);
+      const row = await getOrCreateCacheEntry(sub, userId, timeFilter);
       if (row.status !== 'done') waitingOn.add(row.id);
     }
     return waitingOn;
@@ -168,7 +169,7 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
       const rows = (
         await pool.query(
           'SELECT subreddit, status, posts, error FROM subreddit_cache WHERE subreddit = ANY($1) AND sort=$2 AND time_filter=$3 AND comment_mode=$4',
-          [pending.subreddits, DIGEST_SORT, DIGEST_TIME_FILTER, DIGEST_COMMENT_MODE]
+          [pending.subreddits, DIGEST_SORT, pending.timeFilter || DEFAULT_TIME_FILTER, DIGEST_COMMENT_MODE]
         )
       ).rows;
 
@@ -221,13 +222,14 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
       ).rows[0];
       if (!firstMsg) continue;
 
-      const waitingOn = await buildWaitingOn(topic.subreddits, topic.user_id);
+      const waitingOn = await buildWaitingOn(topic.subreddits, topic.user_id, topic.time_filter);
       const pendingData = {
         subreddits: topic.subreddits,
         query: firstMsg.content,
         useOwnKnowledge: topic.use_own_knowledge,
         postCount: topic.post_count,
         depth: topic.depth,
+        timeFilter: topic.time_filter,
       };
       if (waitingOn.size === 0) {
         finalizeTopic(topic.id, pendingData);
@@ -250,7 +252,7 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
       return res.status(429).json({ error: `Вече имаш ${pendingForUser} чакащи тема(и). Изчакай да приключат.` });
     }
 
-    const { subreddits, query, useOwnKnowledge, depth } = req.body || {};
+    const { subreddits, query, useOwnKnowledge, depth, timeFilter } = req.body || {};
     const cleanSubs = [...new Set((Array.isArray(subreddits) ? subreddits : []).map(sanitizeSubreddit).filter(Boolean))];
     if (!cleanSubs.length) return res.status(400).json({ error: 'Липсва поне един валиден сабредит.' });
     if (cleanSubs.length > MAX_SUBREDDITS) return res.status(400).json({ error: `Максимум ${MAX_SUBREDDITS} сабредита.` });
@@ -261,23 +263,25 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
 
     const cleanPostCount = DEFAULT_POST_COUNT;
     const cleanDepth = ALLOWED_DEPTHS.includes(depth) ? depth : DEFAULT_DEPTH;
+    const cleanTimeFilter = ALLOWED_TIME_FILTERS.includes(timeFilter) ? timeFilter : DEFAULT_TIME_FILTER;
 
     const topicId = crypto.randomBytes(8).toString('hex');
     const title = cleanQuery.length > 80 ? cleanQuery.slice(0, 80) + '…' : cleanQuery;
 
     await pool.query(
-      "INSERT INTO topics (id, user_id, title, subreddits, use_own_knowledge, post_count, depth, status) VALUES ($1,$2,$3,$4,$5,$6,$7,'running')",
-      [topicId, req.user.id, title, cleanSubs, Boolean(useOwnKnowledge), cleanPostCount, cleanDepth]
+      "INSERT INTO topics (id, user_id, title, subreddits, use_own_knowledge, post_count, depth, time_filter, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'running')",
+      [topicId, req.user.id, title, cleanSubs, Boolean(useOwnKnowledge), cleanPostCount, cleanDepth, cleanTimeFilter]
     );
     await pool.query('INSERT INTO topic_messages (topic_id, role, content) VALUES ($1,$2,$3)', [topicId, 'user', cleanQuery]);
 
-    const waitingOn = await buildWaitingOn(cleanSubs, req.user.id);
+    const waitingOn = await buildWaitingOn(cleanSubs, req.user.id, cleanTimeFilter);
     const pendingData = {
       subreddits: cleanSubs,
       query: cleanQuery,
       useOwnKnowledge: Boolean(useOwnKnowledge),
       postCount: cleanPostCount,
       depth: cleanDepth,
+      timeFilter: cleanTimeFilter,
     };
 
     if (waitingOn.size === 0) {
@@ -293,7 +297,7 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
 
   router.get('/api/topics', requireAuth, async (req, res) => {
     const result = await pool.query(
-      'SELECT id, title, subreddits, status, use_own_knowledge, post_count, depth, created_at, updated_at FROM topics WHERE user_id=$1 ORDER BY updated_at DESC LIMIT 200',
+      'SELECT id, title, subreddits, status, use_own_knowledge, post_count, depth, time_filter, created_at, updated_at FROM topics WHERE user_id=$1 ORDER BY updated_at DESC LIMIT 200',
       [req.user.id]
     );
     res.json({ topics: result.rows });
@@ -346,7 +350,7 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
       const rows = (
         await pool.query(
           'SELECT subreddit, posts FROM subreddit_cache WHERE subreddit = ANY($1) AND sort=$2 AND time_filter=$3 AND comment_mode=$4 AND status=\'done\'',
-          [found.topic.subreddits, DIGEST_SORT, DIGEST_TIME_FILTER, DIGEST_COMMENT_MODE]
+          [found.topic.subreddits, DIGEST_SORT, found.topic.time_filter, DIGEST_COMMENT_MODE]
         )
       ).rows;
       if (rows.length !== found.topic.subreddits.length) {

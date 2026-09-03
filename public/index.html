@@ -85,6 +85,18 @@
             </div>
 
             <label class="field">
+              <span data-i18n="topic_time_filter_label">When to scrape from</span>
+              <select id="topic-time-filter">
+                <option value="all" selected data-i18n="opt_all_time">All time</option>
+                <option value="year" data-i18n="opt_year">Year</option>
+                <option value="month" data-i18n="opt_month">Month</option>
+                <option value="week" data-i18n="opt_week">Week</option>
+                <option value="day" data-i18n="opt_day">Day</option>
+                <option value="hour" data-i18n="opt_hour">Hour</option>
+              </select>
+            </label>
+
+            <label class="field">
               <span data-i18n="topic_depth_label">Answer depth</span>
               <select id="topic-depth">
                 <option value="brief" data-i18n="topic_depth_brief">Brief</option>

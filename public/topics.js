@@ -12,6 +12,7 @@
   const MAX_SUBREDDIT_ROWS = 10;
   const topicOwnKnowledge = document.getElementById('topic-own-knowledge');
   const topicDepth = document.getElementById('topic-depth');
+  const topicTimeFilter = document.getElementById('topic-time-filter');
 
   function updateSubAddState() {
     const count = topicSubsList.querySelectorAll('.topic-sub-row').length;
@@ -237,6 +238,7 @@
           query: topicQuery.value.trim(),
           useOwnKnowledge: topicOwnKnowledge.checked,
           depth: topicDepth.value,
+          timeFilter: topicTimeFilter.value,
         }),
       });
       const data = await res.json();
