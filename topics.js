@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const express = require('express');
 const { scrapeSubreddit } = require('./scraper');
-const { generateDigest, continueTopicChat, LLM_ENABLED } = require('./llm');
+const { generateDigest, continueTopicChat, suggestSubreddits, LLM_ENABLED } = require('./llm');
 
 const MAX_SUBREDDITS = 10;
 const DIGEST_SORT = 'top';
@@ -241,6 +241,20 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
   }
 
   // ===================== Routes =====================
+
+  router.post('/api/topics/suggest-subreddits', requireAuth, async (req, res) => {
+    try {
+      if (!LLM_ENABLED) return res.status(503).json({ error: 'Q&A не е конфигуриран на сървъра (липсва OPENROUTER_API_KEY).' });
+      const { query, existingSubreddits } = req.body || {};
+      const cleanQuery = String(query || '').trim();
+      if (!cleanQuery) return res.status(400).json({ error: 'Липсва въпрос/тема.' });
+      const cleanExisting = (Array.isArray(existingSubreddits) ? existingSubreddits : []).map(sanitizeSubreddit).filter(Boolean);
+      const suggestions = await suggestSubreddits({ query: cleanQuery, existingSubreddits: cleanExisting });
+      res.json({ suggestions });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
 
   router.post('/api/topics', requireAuth, async (req, res) => {
     if (!LLM_ENABLED) return res.status(503).json({ error: 'Q&A не е конфигуриран на сървъра (липсва OPENROUTER_API_KEY).' });

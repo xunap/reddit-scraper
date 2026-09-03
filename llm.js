@@ -173,4 +173,31 @@ async function askAboutPosts({ posts, question, subreddit, useOwnKnowledge = fal
   return { answer, includedCount, totalCount, truncated };
 }
 
-module.exports = { askAboutPosts, generateDigest, continueTopicChat, LLM_ENABLED, MODEL };
+async function suggestSubreddits({ query, existingSubreddits = [] }) {
+  const excludeLabel = existingSubreddits.length
+    ? `Do not repeat these already-selected subreddits: ${existingSubreddits.map((s) => `r/${s}`).join(', ')}.`
+    : '';
+  const systemPrompt = `You are a Reddit expert. Given a user's question or research topic, suggest 3 to 5 EXISTING, well-established, currently active subreddits (real communities you are confident actually exist) that would likely have relevant discussions, beyond any subreddits already selected. ${excludeLabel} Only suggest subreddits you are reasonably confident are real. Respond with ONLY a comma-separated list of bare subreddit names, no "r/" prefix, no descriptions, no other text. Example response: GERD, gallbladders, AskDocs`;
+  const userPrompt = `Topic/question: ${query}`;
+
+  const answer = await callOpenRouter([
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userPrompt },
+  ]);
+
+  const existingLower = new Set(existingSubreddits.map((s) => s.toLowerCase()));
+  const names = answer
+    .split(/[,\n]/)
+    .map((s) => s.replace(/^\/?r\//i, '').replace(/[^a-zA-Z0-9_]/g, '').trim())
+    .filter(Boolean);
+  const seen = new Set();
+  const deduped = names.filter((n) => {
+    const key = n.toLowerCase();
+    if (seen.has(key) || existingLower.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return deduped.slice(0, 5);
+}
+
+module.exports = { askAboutPosts, generateDigest, continueTopicChat, suggestSubreddits, LLM_ENABLED, MODEL };

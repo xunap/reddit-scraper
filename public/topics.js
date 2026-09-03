@@ -9,6 +9,8 @@
   const topicQuery = document.getElementById('topic-query');
   const topicSubsList = document.getElementById('topic-subs-list');
   const topicSubAdd = document.getElementById('topic-sub-add');
+  const topicSuggestBtn = document.getElementById('topic-suggest-btn');
+  const topicSuggestChips = document.getElementById('topic-suggest-chips');
   const MAX_SUBREDDIT_ROWS = 10;
   const topicOwnKnowledge = document.getElementById('topic-own-knowledge');
   const topicDepth = document.getElementById('topic-depth');
@@ -44,10 +46,68 @@
       if (i === 0) row.querySelector('.topic-sub-input').value = '';
       else row.remove();
     });
+    topicSuggestChips.innerHTML = '';
     updateSubAddState();
   }
 
+  function addSubredditByName(name) {
+    const emptyInput = [...topicSubsList.querySelectorAll('.topic-sub-input')].find((el) => !el.value.trim());
+    if (emptyInput) {
+      emptyInput.value = name;
+      return;
+    }
+    addSubRow();
+    const inputs = topicSubsList.querySelectorAll('.topic-sub-input');
+    inputs[inputs.length - 1].value = name;
+  }
+
+  function renderSuggestChips(names) {
+    topicSuggestChips.innerHTML = '';
+    names.forEach((name) => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'topic-suggest-chip';
+      chip.textContent = '+ r/' + name;
+      chip.addEventListener('click', () => {
+        addSubredditByName(name);
+        chip.remove();
+      });
+      topicSuggestChips.appendChild(chip);
+    });
+  }
+
   topicSubAdd.addEventListener('click', addSubRow);
+
+  topicSuggestBtn.addEventListener('click', async () => {
+    const query = topicQuery.value.trim();
+    if (!query) {
+      topicFormError.textContent = I18N.t('err_topic_suggest_need_query');
+      topicFormError.hidden = false;
+      return;
+    }
+    topicFormError.hidden = true;
+    const existingSubreddits = [...topicSubsList.querySelectorAll('.topic-sub-input')].map((el) => el.value.trim()).filter(Boolean);
+    topicSuggestBtn.disabled = true;
+    const originalText = topicSuggestBtn.textContent;
+    topicSuggestBtn.textContent = I18N.t('topic_suggest_loading');
+    try {
+      const res = await fetch('/api/topics/suggest-subreddits', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, existingSubreddits }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || I18N.t('err_topic_suggest_default'));
+      renderSuggestChips(data.suggestions || []);
+    } catch (err) {
+      topicFormError.textContent = err.message;
+      topicFormError.hidden = false;
+    } finally {
+      topicSuggestBtn.disabled = false;
+      topicSuggestBtn.textContent = originalText;
+    }
+  });
+
   updateSubAddState();
 
   const topicThreadPanel = document.getElementById('topic-thread-panel');
