@@ -99,42 +99,47 @@ async function callOpenRouter(messages) {
   return answer.replace(/[–—]/g, '-');
 }
 
-const DEPTH_INSTRUCTIONS = {
-  brief: `Keep the whole answer CONCISE: one short paragraph per section, a few sentences each. Only include the three core sections below - do not add extra subsections.`,
-  standard: `Write a few solid paragraphs per section - more thorough than a one-line summary, but not an exhaustive report. Only include the three core sections below unless the data clearly calls for one more.`,
-  deep: `Write a LONG, COMPREHENSIVE, in-depth report - do not artificially shorten it, this is meant to read like a detailed research write-up. Beyond the three core sections, add as many additional relevant subsections as the data supports and the topic calls for - for example (only include the ones that actually apply): Diet & foods to include/avoid, Supplements & natural remedies mentioned, Medications & medical options mentioned, Lifestyle & stress factors, Suggested action plan / next steps, Red flags & when to see a doctor. Give each subsection several paragraphs of real substance drawn from the posts and comments, not just a bullet or two.`,
+const HEADER_TRANSLATIONS = {
+  English: { summary: 'Summary', consensus: 'Consensus / Split of Opinions', examples: 'Examples' },
+  Bulgarian: { summary: 'Обобщение', consensus: 'Консенсус / разпределение на мненията', examples: 'Примери' },
 };
 
-function digestSystemPrompt(subredditNames, useOwnKnowledge, languageLabel, depth) {
+// Държи модела да не се държи прекалено угоднически/захаросано и да не
+// отваря/затваря отговора с ласкателства или мотивационни клишета.
+const TONE_RULES = `Do not open with a flattering preamble about how deep, important, or insightful the question is (e.g. "This is an excellent question" or "I will answer with maximum precision and rigor") - skip straight to the substance. Do not close with generic motivational encouragement or a pep talk (e.g. "You are strong and your body wants to heal", "keep observing and experimenting and you will find your new normal") - end when the actual content is done, nothing more. Be balanced and direct rather than agreeable: if the Reddit data or general knowledge suggests the user's assumption is wrong, incomplete, or risky, say so plainly instead of just validating whatever they said.`;
+
+function digestSystemPrompt(subredditNames, languageLabel, extended) {
   const subsLabel = subredditNames.map((s) => `r/${s}`).join(', ');
-  const ownKnowledgeRule = useOwnKnowledge
-    ? `You may also add your own general knowledge (e.g. medical, technical) when the Reddit content is insufficient - but clearly separate what comes from Reddit ("According to ${subsLabel}...") from your own general knowledge ("In general..." / "From a medical standpoint..."). Never present your own knowledge as if it were a Reddit user's opinion.`
-    : `Answer ONLY based on the provided Reddit posts and comments. Do not invent information that isn't in the text, and do not add your own general/expert knowledge. If the data doesn't contain an answer, say so clearly.`;
-  const depthRule = DEPTH_INSTRUCTIONS[depth] || DEPTH_INSTRUCTIONS.standard;
+  const headers = HEADER_TRANSLATIONS[languageLabel] || HEADER_TRANSLATIONS.English;
+  const lengthRule = extended
+    ? `Write a LONG, COMPREHENSIVE, in-depth report - do not artificially shorten it, this is meant to read like a detailed research write-up. Beyond the three core sections, add as many additional relevant subsections as the data supports and the topic calls for (e.g. Diet & foods to include/avoid, Supplements & natural remedies mentioned, Medications & medical options mentioned, Lifestyle & stress factors, Suggested action plan / next steps, Red flags & when to see a doctor - only the ones that actually apply). Give each subsection several paragraphs of real substance.`
+    : `Answer at whatever length the question genuinely warrants - not artificially short, not padded. A simple question gets a few solid paragraphs; a genuinely complex one can run longer.`;
 
-  return `You are an assistant that synthesizes the collective opinions/experiences of people from ${subsLabel} on a given topic or question. ${ownKnowledgeRule}
+  return `You are an assistant that synthesizes the collective opinions/experiences of people from ${subsLabel} on a given topic or question. Ground your answer overwhelmingly (roughly 80-90% of its substance) in the actual Reddit posts and comments provided below. You may supplement the remaining portion with your own general knowledge (e.g. medical, technical) when the Reddit content doesn't cover something important - but always clearly mark which parts come from Reddit ("According to ${subsLabel}...") versus your own knowledge ("In general..." / "From a medical standpoint..."), and never present your own knowledge as if it were a Reddit user's opinion.
 
-${depthRule}
+${lengthRule}
 
-The three core sections (Markdown headers, translated into the response language) are:
-## Summary
+${TONE_RULES}
+
+The three core sections are (use these EXACT headers when writing in ${languageLabel}: "## ${headers.summary}", "## ${headers.consensus}", "## ${headers.examples}"):
+## ${headers.summary}
 A direct answer to the question/topic, synthesized from the real posts and comments.
 
-## Consensus / Split of Opinions
+## ${headers.consensus}
 If the question is comparative or "poll-like" by nature (e.g. "what helped people"), give a ROUGH approximate percentage breakdown of the different viewpoints/approaches, based on the sample of posts/comments (e.g. "~60% mention X, ~25% Y, ..."), and explicitly note this is an approximate estimate from a sample, not a scientific poll. If opinions are largely unanimous or too varied to group, say so directly instead of inventing percentages.
 
-## Examples
+## ${headers.examples}
 Concrete quotes/examples that illustrate the above. When picking which posts to cite, prioritize genuine success stories - people describing what specifically helped them improve or recover - over posts that just describe symptoms or complaints, though you can include the latter when directly relevant. Format every post reference as a markdown hyperlink using the post's title as the link text, e.g. [The Gastritis Quick Start Guide](https://reddit.com/...) - never show a raw URL in parentheses next to plain text.
 
 IMPORTANT: The user's question/topic below is written in ${languageLabel}. You MUST write your entire response - including every section header - in ${languageLabel}, regardless of what language these instructions are in. Never use the em dash character or en dash character in your response - always use a regular hyphen (like this one) or split into separate sentences instead. Be honest when the sample is small or insufficient for a strong conclusion. If the topic touches on physical symptoms that could be a medical emergency or need a professional diagnosis (e.g. chest pain, heart palpitations), note briefly that seeing a doctor directly is worth doing regardless of what Reddit says.`;
 }
 
-async function generateDigest({ subredditsData, query, useOwnKnowledge = false, forceLanguage = null, depth = 'standard' }) {
+async function generateDigest({ subredditsData, query, forceLanguage = null, extended = false }) {
   const subredditNames = subredditsData.map((s) => s.subreddit);
   const { text: context, summary, truncated } = buildMultiContext(subredditsData);
   const languageLabel = forceLanguage || detectLanguageLabel(query);
 
-  const systemPrompt = digestSystemPrompt(subredditNames, useOwnKnowledge, languageLabel, depth);
+  const systemPrompt = digestSystemPrompt(subredditNames, languageLabel, extended);
   const userPrompt = `Topic/question: ${query}\n\nData (${summary}${truncated ? ', some posts/comments truncated for length' : ''}):\n\n${context}`;
 
   const answer = await callOpenRouter([
@@ -144,13 +149,13 @@ async function generateDigest({ subredditsData, query, useOwnKnowledge = false, 
   return { answer, summary, truncated };
 }
 
-async function continueTopicChat({ subredditsData, messages, useOwnKnowledge = false, depth = 'standard' }) {
+async function continueTopicChat({ subredditsData, messages }) {
   const subredditNames = subredditsData.map((s) => s.subreddit);
   const { text: context } = buildMultiContext(subredditsData);
   const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user');
   const languageLabel = detectLanguageLabel(lastUserMsg ? lastUserMsg.content : '');
 
-  const systemPrompt = `${digestSystemPrompt(subredditNames, useOwnKnowledge, languageLabel, depth)}\n\nThe user's messages below are a continuation of a conversation on this topic - answer only the latest question, keeping the conversation context in mind. You don't need to repeat the full structure with all sections above for short follow-up questions - answer directly and naturally in ${languageLabel} at the depth level described above, unless the question explicitly asks for something shorter or longer.\n\nReddit data:\n\n${context}`;
+  const systemPrompt = `${digestSystemPrompt(subredditNames, languageLabel, false)}\n\nThe user's messages below are a continuation of a conversation on this topic - answer only the latest question, keeping the conversation context in mind. Ignore the length guidance above for the initial answer and instead judge length purely from THIS follow-up question: answer briefly if it is short/simple, and at real length if it genuinely needs a detailed explanation. You don't need to repeat the full three-section structure for follow-ups - answer directly and naturally in ${languageLabel}.\n\nReddit data:\n\n${context}`;
 
   const answer = await callOpenRouter([{ role: 'system', content: systemPrompt }, ...messages]);
   return { answer };
@@ -188,7 +193,7 @@ async function suggestSubreddits({ query, existingSubreddits = [] }) {
   const existingLower = new Set(existingSubreddits.map((s) => s.toLowerCase()));
   const names = answer
     .split(/[,\n]/)
-    .map((s) => s.replace(/^\/?r\//i, '').replace(/[^a-zA-Z0-9_]/g, '').trim())
+    .map((s) => s.trim().replace(/^\/?r\//i, '').replace(/[^a-zA-Z0-9_]/g, ''))
     .filter(Boolean);
   const seen = new Set();
   const deduped = names.filter((n) => {

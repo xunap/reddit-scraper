@@ -86,34 +86,26 @@
               <div id="topic-suggest-chips" class="topic-suggest-chips"></div>
             </div>
 
-            <label class="field">
-              <span data-i18n="topic_time_filter_label">When to scrape from</span>
-              <select id="topic-time-filter">
-                <option value="all" selected data-i18n="opt_all_time">All time</option>
-                <option value="year" data-i18n="opt_year">Year</option>
-                <option value="month" data-i18n="opt_month">Month</option>
-                <option value="week" data-i18n="opt_week">Week</option>
-                <option value="day" data-i18n="opt_day">Day</option>
-                <option value="hour" data-i18n="opt_hour">Hour</option>
-              </select>
-            </label>
-
-            <label class="field">
-              <span data-i18n="topic_depth_label">Answer depth</span>
-              <select id="topic-depth">
-                <option value="brief" data-i18n="topic_depth_brief">Brief</option>
-                <option value="standard" selected data-i18n="topic_depth_standard">Standard</option>
-                <option value="deep" data-i18n="topic_depth_deep">In-depth report</option>
-              </select>
-            </label>
-
-            <label class="field toggle-field">
-              <span class="toggle-switch">
-                <input id="topic-own-knowledge" type="checkbox">
-                <span class="toggle-track"></span>
-              </span>
-              <span class="toggle-copy"><span data-i18n="qa_own_knowledge_main">Also let the model add its own knowledge</span> <em data-i18n="qa_own_knowledge_sub">(general medical knowledge included - off by default, answers only from Reddit)</em></span>
-            </label>
+            <div class="field-row">
+              <label class="field">
+                <span data-i18n="topic_time_filter_label">When to scrape from</span>
+                <select id="topic-time-filter">
+                  <option value="all" selected data-i18n="opt_all_time">All time</option>
+                  <option value="year" data-i18n="opt_year">Year</option>
+                  <option value="month" data-i18n="opt_month">Month</option>
+                  <option value="week" data-i18n="opt_week">Week</option>
+                  <option value="day" data-i18n="opt_day">Day</option>
+                  <option value="hour" data-i18n="opt_hour">Hour</option>
+                </select>
+              </label>
+              <label class="field toggle-field toggle-field-inline">
+                <span class="toggle-switch">
+                  <input id="topic-extended" type="checkbox">
+                  <span class="toggle-track"></span>
+                </span>
+                <span class="toggle-copy" data-i18n="topic_extended_label">Extended response?</span>
+              </label>
+            </div>
 
             <button type="submit" id="topic-submit" data-i18n="topic_submit">Start digest</button>
             <p class="form-error" id="topic-form-error" hidden></p>
@@ -125,10 +117,14 @@
             <h2 id="topic-thread-title"></h2>
             <span class="badge" id="topic-status-badge" hidden></span>
           </div>
-          <p class="progress-label" id="topic-progress" hidden></p>
+          <p class="topic-meta" id="topic-meta" hidden></p>
+          <div class="topic-loader" id="topic-loader" hidden>
+            <span class="topic-loader-dots"><span></span><span></span><span></span></span>
+            <span id="topic-progress"></span>
+          </div>
           <div id="topic-thread" class="qa-thread"></div>
           <form id="topic-followup-form" class="qa-form" hidden>
-            <textarea id="topic-followup-input" rows="2" data-i18n-placeholder="topic_followup_placeholder" placeholder="Ask a follow-up..." required></textarea>
+            <textarea id="topic-followup-input" rows="1" data-i18n-placeholder="topic_followup_placeholder" placeholder="Ask a follow-up..." required></textarea>
             <button type="submit" id="topic-followup-submit" data-i18n="btn_ask">Ask</button>
           </form>
           <p class="form-error" id="topic-thread-error" hidden></p>

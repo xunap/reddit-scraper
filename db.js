@@ -75,19 +75,19 @@ async function initSchema() {
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       title TEXT NOT NULL,
       subreddits TEXT[] NOT NULL,
-      use_own_knowledge BOOLEAN NOT NULL DEFAULT false,
       post_count INTEGER NOT NULL DEFAULT 25,
-      depth TEXT NOT NULL DEFAULT 'standard',
+      extended BOOLEAN NOT NULL DEFAULT false,
       time_filter TEXT NOT NULL DEFAULT 'all',
       status TEXT NOT NULL DEFAULT 'queued',
       error TEXT,
       created_at TIMESTAMPTZ DEFAULT now(),
       updated_at TIMESTAMPTZ DEFAULT now()
     );
-    ALTER TABLE topics ADD COLUMN IF NOT EXISTS use_own_knowledge BOOLEAN NOT NULL DEFAULT false;
     ALTER TABLE topics ADD COLUMN IF NOT EXISTS post_count INTEGER NOT NULL DEFAULT 25;
-    ALTER TABLE topics ADD COLUMN IF NOT EXISTS depth TEXT NOT NULL DEFAULT 'standard';
+    ALTER TABLE topics ADD COLUMN IF NOT EXISTS extended BOOLEAN NOT NULL DEFAULT false;
     ALTER TABLE topics ADD COLUMN IF NOT EXISTS time_filter TEXT NOT NULL DEFAULT 'all';
+    ALTER TABLE topics DROP COLUMN IF EXISTS use_own_knowledge;
+    ALTER TABLE topics DROP COLUMN IF EXISTS depth;
     CREATE INDEX IF NOT EXISTS idx_topics_user ON topics(user_id, updated_at DESC);
 
     CREATE TABLE IF NOT EXISTS topic_messages (

@@ -12,9 +12,21 @@
   const topicSuggestBtn = document.getElementById('topic-suggest-btn');
   const topicSuggestChips = document.getElementById('topic-suggest-chips');
   const MAX_SUBREDDIT_ROWS = 10;
-  const topicOwnKnowledge = document.getElementById('topic-own-knowledge');
-  const topicDepth = document.getElementById('topic-depth');
   const topicTimeFilter = document.getElementById('topic-time-filter');
+  const topicExtended = document.getElementById('topic-extended');
+
+  // ===================== Auto-resize textareas (без ръчен resize handle) ====
+
+  function autoResize(textarea) {
+    textarea.style.height = 'auto';
+    textarea.style.height = textarea.scrollHeight + 'px';
+  }
+  function wireAutoResize(textarea) {
+    autoResize(textarea);
+    textarea.addEventListener('input', () => autoResize(textarea));
+  }
+
+  // ===================== Динамичен списък със сабредити =====================
 
   function updateSubAddState() {
     const count = topicSubsList.querySelectorAll('.topic-sub-row').length;
@@ -110,9 +122,13 @@
 
   updateSubAddState();
 
+  // ===================== Thread =====================
+
   const topicThreadPanel = document.getElementById('topic-thread-panel');
   const topicThreadTitle = document.getElementById('topic-thread-title');
   const topicStatusBadge = document.getElementById('topic-status-badge');
+  const topicMeta = document.getElementById('topic-meta');
+  const topicLoader = document.getElementById('topic-loader');
   const topicProgress = document.getElementById('topic-progress');
   const topicThread = document.getElementById('topic-thread');
   const topicFollowupForm = document.getElementById('topic-followup-form');
@@ -133,6 +149,16 @@
     return new Date(iso).toLocaleString(locale, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   }
 
+  const TIME_FILTER_LABEL_KEYS = { all: 'opt_all_time', year: 'opt_year', month: 'opt_month', week: 'opt_week', day: 'opt_day', hour: 'opt_hour' };
+
+  function renderTopicMeta(topic) {
+    const parts = [topic.subreddits.map((s) => 'r/' + s).join(', ')];
+    parts.push(I18N.t(TIME_FILTER_LABEL_KEYS[topic.time_filter] || 'opt_all_time'));
+    if (topic.extended) parts.push(I18N.t('topic_extended_tag'));
+    topicMeta.textContent = parts.join(' · ');
+    topicMeta.hidden = false;
+  }
+
   async function loadTopicList() {
     const res = await fetch('/api/topics');
     if (!res.ok) return;
@@ -145,7 +171,7 @@
       .map(
         (t) => `
       <div class="history-item${t.id === currentTopicId ? ' active' : ''}" data-topic-id="${t.id}">
-        <div class="h-sub">${t.use_own_knowledge ? `<span class="h-own-knowledge" title="${I18N.t('topic_own_knowledge_badge')}">&#129504;</span> ` : ''}${escapeHtml(t.title)} <span class="h-status ${t.status}">${I18N.t('status_' + t.status)}</span></div>
+        <div class="h-sub">${escapeHtml(t.title)} <span class="h-status ${t.status}">${I18N.t('status_' + t.status)}</span></div>
         <div class="h-meta">
           <span>${t.subreddits.map((s) => 'r/' + escapeHtml(s)).join(', ')}</span>
           <span>${fmtDate(t.updated_at)}</span>
@@ -172,14 +198,21 @@
     topicThread.scrollTop = topicThread.scrollHeight;
   }
 
+  // "done" не се показва - очевидно е готово щом виждаш отговора; за
+  // running/queued/error бейджът все още носи полезна информация.
   function setStatusBadge(status) {
-    if (!status) {
+    if (!status || status === 'done') {
       topicStatusBadge.hidden = true;
       return;
     }
     topicStatusBadge.hidden = false;
     topicStatusBadge.textContent = I18N.t('status_' + status) || status;
     topicStatusBadge.className = 'badge ' + status;
+  }
+
+  function setFollowupEnabled(enabled) {
+    topicFollowupInput.disabled = !enabled;
+    topicFollowupSubmit.disabled = !enabled;
   }
 
   async function openTopic(topicId) {
@@ -189,8 +222,10 @@
     topicThreadPanel.hidden = false;
     topicThreadError.hidden = true;
     topicThread.innerHTML = '';
+    topicLoader.hidden = true;
+    topicMeta.hidden = true;
     topicFollowupForm.hidden = true;
-    topicProgress.hidden = true;
+    setFollowupEnabled(false);
 
     try {
       const res = await fetch(`/api/topics/${topicId}`);
@@ -199,13 +234,15 @@
 
       topicThreadTitle.textContent = data.topic.title;
       setStatusBadge(data.topic.status);
-      topicOwnKnowledge.checked = Boolean(data.topic.use_own_knowledge);
+      renderTopicMeta(data.topic);
       data.messages.forEach(renderMessage);
 
       if (data.topic.status === 'running' || data.topic.status === 'queued') {
+        topicFollowupForm.hidden = false;
         startPolling(topicId);
       } else if (data.topic.status === 'done') {
         topicFollowupForm.hidden = false;
+        setFollowupEnabled(true);
       } else if (data.topic.status === 'error') {
         topicThreadError.textContent = data.topic.error || I18N.t('err_topic_load_default');
         topicThreadError.hidden = false;
@@ -219,7 +256,7 @@
   }
 
   function startPolling(topicId) {
-    topicProgress.hidden = false;
+    topicLoader.hidden = false;
     pollTimer = setInterval(() => pollTopicStatus(topicId), 2000);
     pollTopicStatus(topicId);
   }
@@ -236,22 +273,23 @@
 
       if (data.status === 'done') {
         clearInterval(pollTimer);
-        topicProgress.hidden = true;
+        topicLoader.hidden = true;
         const full = await fetch(`/api/topics/${topicId}`).then((r) => r.json());
         topicThread.innerHTML = '';
         full.messages.forEach(renderMessage);
-        topicFollowupForm.hidden = false;
+        setFollowupEnabled(true);
         loadTopicList();
       } else if (data.status === 'error') {
         clearInterval(pollTimer);
-        topicProgress.hidden = true;
+        topicLoader.hidden = true;
+        topicFollowupForm.hidden = true;
         topicThreadError.textContent = data.error || I18N.t('err_topic_create_default');
         topicThreadError.hidden = false;
         loadTopicList();
       }
     } catch (err) {
       clearInterval(pollTimer);
-      topicProgress.hidden = true;
+      topicLoader.hidden = true;
       topicThreadError.textContent = err.message;
       topicThreadError.hidden = false;
     }
@@ -264,15 +302,16 @@
     topicComposer.hidden = false;
     topicForm.reset();
     resetSubRows();
+    autoResize(topicQuery);
     topicFormError.hidden = true;
     topicList.querySelectorAll('.history-item.active').forEach((el) => el.classList.remove('active'));
   });
 
-  // Ctrl+Enter, Shift+Enter, или Ctrl+Shift+Enter изпращат формата; обикновен
-  // Enter си остава нов ред в textarea-та.
+  // Само Ctrl+Enter изпраща; обикновен Enter и Shift+Enter си остават нов ред
+  // (стандартно поведение на textarea, не го пипаме).
   function wireSubmitShortcut(textarea, form) {
     textarea.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && (e.ctrlKey || e.shiftKey)) {
+      if (e.key === 'Enter' && e.ctrlKey && !e.shiftKey) {
         e.preventDefault();
         form.requestSubmit();
       }
@@ -280,6 +319,8 @@
   }
   wireSubmitShortcut(topicQuery, topicForm);
   wireSubmitShortcut(topicFollowupInput, topicFollowupForm);
+  wireAutoResize(topicQuery);
+  wireAutoResize(topicFollowupInput);
 
   topicForm.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -296,9 +337,8 @@
         body: JSON.stringify({
           subreddits,
           query: topicQuery.value.trim(),
-          useOwnKnowledge: topicOwnKnowledge.checked,
-          depth: topicDepth.value,
           timeFilter: topicTimeFilter.value,
+          extended: topicExtended.checked,
         }),
       });
       const data = await res.json();
@@ -320,10 +360,11 @@
     if (!content || !currentTopicId) return;
     topicThreadError.hidden = true;
     topicFollowupInput.value = '';
-    topicFollowupSubmit.disabled = true;
-    topicFollowupInput.disabled = true;
+    autoResize(topicFollowupInput);
+    setFollowupEnabled(false);
 
     renderMessage({ role: 'user', content });
+    topicThreadPanel.scrollIntoView({ behavior: 'smooth', block: 'end' });
 
     const thinking = document.createElement('div');
     thinking.className = 'qa-thinking';
@@ -335,7 +376,7 @@
       const res = await fetch(`/api/topics/${currentTopicId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content, useOwnKnowledge: topicOwnKnowledge.checked }),
+        body: JSON.stringify({ content }),
       });
       const data = await res.json();
       thinking.remove();
@@ -347,8 +388,7 @@
       topicThreadError.textContent = err.message;
       topicThreadError.hidden = false;
     } finally {
-      topicFollowupSubmit.disabled = false;
-      topicFollowupInput.disabled = false;
+      setFollowupEnabled(true);
       topicFollowupInput.focus();
     }
   });

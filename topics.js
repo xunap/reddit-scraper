@@ -13,8 +13,6 @@ const DIGEST_COMMENT_LIMIT = 50;
 // сабредит; всяка тема винаги ползва целия топ100 (потребителят не избира).
 const DIGEST_MAX_POST_TARGET = 100;
 const DEFAULT_POST_COUNT = DIGEST_MAX_POST_TARGET; // винаги топ100, потребителят не избира
-const ALLOWED_DEPTHS = ['brief', 'standard', 'deep'];
-const DEFAULT_DEPTH = 'standard';
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 дни
 const MAX_TOPICS_PENDING_PER_USER = 2;
 const MAX_CACHED_POSTS = 150; // таван след merge на инкременталните обновявания
@@ -32,7 +30,7 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
   const cacheQueue = []; // масив от subreddit_cache.id
   let cacheRunningId = null;
   const cacheStatusText = new Map(); // subreddit_cache.id -> текущо съобщение за прогрес
-  const pendingTopics = new Map(); // topicId -> { waitingOn: Set<cacheId>, subreddits: string[], query, useOwnKnowledge, userId }
+  const pendingTopics = new Map(); // topicId -> { waitingOn: Set<cacheId>, subreddits: string[], query, extended, timeFilter, postCount }
 
   function processCacheQueue() {
     if (cacheRunningId) return;
@@ -175,24 +173,32 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
 
       const bySubreddit = new Map(rows.map((r) => [r.subreddit, r]));
       const failed = pending.subreddits.filter((s) => bySubreddit.get(s)?.status !== 'done');
-      if (failed.length) {
+      const succeeded = pending.subreddits.filter((s) => bySubreddit.get(s)?.status === 'done');
+
+      if (!succeeded.length) {
         const msg = `Неуспешно скрейпване на: ${failed.join(', ')}`;
         await pool.query("UPDATE topics SET status='error', error=$2, updated_at=now() WHERE id=$1", [topicId, msg]);
         return;
       }
 
-      const subredditsData = pending.subreddits.map((s) => ({
+      // Ако само ЧАСТ от сабредитите се провалят (напр. грешно/несъществуващо
+      // име), продължаваме с останалите вместо да проваляме цялата тема -
+      // потребителят иначе може да чака с часове за нищо заради един лош ред.
+      const subredditsData = succeeded.map((s) => ({
         subreddit: s,
         posts: bySubreddit.get(s).posts.slice(0, pending.postCount || DEFAULT_POST_COUNT),
       }));
       const { answer } = await generateDigest({
         subredditsData,
         query: pending.query,
-        useOwnKnowledge: pending.useOwnKnowledge,
-        depth: pending.depth,
+        extended: pending.extended,
       });
 
-      await pool.query('INSERT INTO topic_messages (topic_id, role, content) VALUES ($1,$2,$3)', [topicId, 'assistant', answer]);
+      const failedNote = failed.length
+        ? `\n\n*(Note: could not scrape: ${failed.map((s) => 'r/' + s).join(', ')} - possibly a typo or a subreddit that doesn't exist. The digest above only covers ${succeeded.map((s) => 'r/' + s).join(', ')}.)*`
+        : '';
+
+      await pool.query('INSERT INTO topic_messages (topic_id, role, content) VALUES ($1,$2,$3)', [topicId, 'assistant', answer + failedNote]);
       await pool.query("UPDATE topics SET status='done', updated_at=now() WHERE id=$1", [topicId]);
     } catch (err) {
       await pool.query("UPDATE topics SET status='error', error=$2, updated_at=now() WHERE id=$1", [
@@ -226,9 +232,8 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
       const pendingData = {
         subreddits: topic.subreddits,
         query: firstMsg.content,
-        useOwnKnowledge: topic.use_own_knowledge,
         postCount: topic.post_count,
-        depth: topic.depth,
+        extended: topic.extended,
         timeFilter: topic.time_filter,
       };
       if (waitingOn.size === 0) {
@@ -266,7 +271,7 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
       return res.status(429).json({ error: `Вече имаш ${pendingForUser} чакащи тема(и). Изчакай да приключат.` });
     }
 
-    const { subreddits, query, useOwnKnowledge, depth, timeFilter } = req.body || {};
+    const { subreddits, query, extended, timeFilter } = req.body || {};
     const cleanSubs = [...new Set((Array.isArray(subreddits) ? subreddits : []).map(sanitizeSubreddit).filter(Boolean))];
     if (!cleanSubs.length) return res.status(400).json({ error: 'Липсва поне един валиден сабредит.' });
     if (cleanSubs.length > MAX_SUBREDDITS) return res.status(400).json({ error: `Максимум ${MAX_SUBREDDITS} сабредита.` });
@@ -276,15 +281,15 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
     if (cleanQuery.length > 2000) return res.status(400).json({ error: 'Въпросът е твърде дълъг (макс. 2000 символа).' });
 
     const cleanPostCount = DEFAULT_POST_COUNT;
-    const cleanDepth = ALLOWED_DEPTHS.includes(depth) ? depth : DEFAULT_DEPTH;
+    const cleanExtended = Boolean(extended);
     const cleanTimeFilter = ALLOWED_TIME_FILTERS.includes(timeFilter) ? timeFilter : DEFAULT_TIME_FILTER;
 
     const topicId = crypto.randomBytes(8).toString('hex');
     const title = cleanQuery.length > 80 ? cleanQuery.slice(0, 80) + '…' : cleanQuery;
 
     await pool.query(
-      "INSERT INTO topics (id, user_id, title, subreddits, use_own_knowledge, post_count, depth, time_filter, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'running')",
-      [topicId, req.user.id, title, cleanSubs, Boolean(useOwnKnowledge), cleanPostCount, cleanDepth, cleanTimeFilter]
+      "INSERT INTO topics (id, user_id, title, subreddits, post_count, extended, time_filter, status) VALUES ($1,$2,$3,$4,$5,$6,$7,'running')",
+      [topicId, req.user.id, title, cleanSubs, cleanPostCount, cleanExtended, cleanTimeFilter]
     );
     await pool.query('INSERT INTO topic_messages (topic_id, role, content) VALUES ($1,$2,$3)', [topicId, 'user', cleanQuery]);
 
@@ -292,9 +297,8 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
     const pendingData = {
       subreddits: cleanSubs,
       query: cleanQuery,
-      useOwnKnowledge: Boolean(useOwnKnowledge),
       postCount: cleanPostCount,
-      depth: cleanDepth,
+      extended: cleanExtended,
       timeFilter: cleanTimeFilter,
     };
 
@@ -311,7 +315,7 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
 
   router.get('/api/topics', requireAuth, async (req, res) => {
     const result = await pool.query(
-      'SELECT id, title, subreddits, status, use_own_knowledge, post_count, depth, time_filter, created_at, updated_at FROM topics WHERE user_id=$1 ORDER BY updated_at DESC LIMIT 200',
+      'SELECT id, title, subreddits, status, post_count, extended, time_filter, created_at, updated_at FROM topics WHERE user_id=$1 ORDER BY updated_at DESC LIMIT 200',
       [req.user.id]
     );
     res.json({ topics: result.rows });
@@ -357,7 +361,7 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
         return res.status(409).json({ error: `Темата все още не е готова (статус: ${found.topic.status}).` });
       }
 
-      const { content, useOwnKnowledge } = req.body || {};
+      const { content } = req.body || {};
       const cleanContent = String(content || '').trim();
       if (!cleanContent) return res.status(400).json({ error: 'Липсва съобщение.' });
 
@@ -367,20 +371,15 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
           [found.topic.subreddits, DIGEST_SORT, found.topic.time_filter, DIGEST_COMMENT_MODE]
         )
       ).rows;
-      if (rows.length !== found.topic.subreddits.length) {
-        return res.status(409).json({ error: 'Липсват кеширани данни за някои от сабредитите на тази тема.' });
+      if (!rows.length) {
+        return res.status(409).json({ error: 'Липсват кеширани данни за сабредитите на тази тема.' });
       }
       const subredditsData = rows.map((r) => ({ subreddit: r.subreddit, posts: r.posts.slice(0, found.topic.post_count || DEFAULT_POST_COUNT) }));
 
       await pool.query('INSERT INTO topic_messages (topic_id, role, content) VALUES ($1,$2,$3)', [req.params.id, 'user', cleanContent]);
 
       const history = [...found.messages, { role: 'user', content: cleanContent }].map((m) => ({ role: m.role, content: m.content }));
-      const { answer } = await continueTopicChat({
-        subredditsData,
-        messages: history,
-        useOwnKnowledge: Boolean(useOwnKnowledge),
-        depth: found.topic.depth,
-      });
+      const { answer } = await continueTopicChat({ subredditsData, messages: history });
 
       const saved = await pool.query(
         'INSERT INTO topic_messages (topic_id, role, content) VALUES ($1,$2,$3) RETURNING id, created_at',
