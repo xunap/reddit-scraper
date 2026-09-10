@@ -242,10 +242,10 @@
         (t) => `
       <div class="history-item${t.id === currentTopicId ? ' active' : ''}" data-topic-id="${t.id}" data-title="${escapeHtml(t.title)}">
         <div class="h-sub"><span class="h-title">${escapeHtml(t.title)}</span> <span class="h-status ${t.status}">${I18N.t('status_' + t.status)}</span></div>
+        <div class="h-subs-line">${t.subreddits.map((s) => 'r/' + escapeHtml(s)).join(', ')}</div>
         <div class="h-meta">
-          <span>${t.subreddits.map((s) => 'r/' + escapeHtml(s)).join(', ')}</span>
-          <span class="h-right">
-            <span class="h-date">${fmtDate(t.updated_at)}</span>
+          <span class="h-date">${fmtDate(t.updated_at)}</span>
+          <span class="h-actions">
             <button type="button" class="h-icon-btn h-rename" title="${I18N.t('tooltip_rename')}" aria-label="${I18N.t('tooltip_rename')}">${ICON_RENAME}</button>
             <button type="button" class="h-icon-btn h-delete" title="${I18N.t('tooltip_delete')}" aria-label="${I18N.t('tooltip_delete')}">${ICON_DELETE}</button>
           </span>

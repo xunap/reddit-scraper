@@ -127,14 +127,15 @@ body{
 }
 .history-item:hover{border-color:var(--accent);}
 .history-item .h-sub{font-weight:600; font-size:0.88rem; display:flex; align-items:center; gap:0.4rem;}
-.history-item .h-meta{color:var(--ink-muted); font-size:0.75rem; margin-top:0.2rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;}
+.history-item .h-subs-line{color:var(--ink-muted); font-size:0.75rem; margin-top:0.2rem;}
+.history-item .h-meta{color:var(--ink-muted); font-size:0.75rem; margin-top:0.3rem; display:flex; align-items:center; justify-content:space-between; gap:0.5rem;}
 .history-item .h-status{
   display:inline-block; font-size:0.68rem; text-transform:uppercase; padding:0.05rem 0.4rem; border-radius:999px;
 }
 .history-item .h-status.done{background:var(--ok-bg); color:var(--ok-ink);}
 .history-item .h-status.error{background:var(--err-bg); color:var(--err-ink);}
 .history-item .h-status.running, .history-item .h-status.queued{background:var(--run-bg); color:var(--run-ink);}
-.history-item .h-right{display:flex; align-items:center; gap:0.35rem; margin-left:auto;}
+.history-item .h-actions{display:flex; align-items:center; gap:0.5rem;}
 .history-item .h-icon-btn{
   background:none; background-image:none; border:none; box-shadow:none; padding:0; margin:0; cursor:pointer;
   color:var(--ink-muted); display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; flex:none;
