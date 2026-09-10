@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const express = require('express');
-const { scrapeSubreddit } = require('./scraper');
+const { scrapeSubreddit, searchSubredditRelevance } = require('./scraper');
 const { generateDigest, continueTopicChat, suggestSubreddits, generateTopicTitle, LLM_ENABLED } = require('./llm');
 
 const MAX_SUBREDDITS = 10;
@@ -16,6 +16,12 @@ const DEFAULT_POST_COUNT = DIGEST_MAX_POST_TARGET; // винаги топ100, п
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 дни
 const MAX_TOPICS_PENDING_PER_USER = 2;
 const MAX_CACHED_POSTS = 150; // таван след merge на инкременталните обновявания
+// Допълнително search-по-relevance за самия въпрос, В ДОПЪЛНЕНИЕ на общия
+// топ100 - общият топ (сортиран по гласове за цялото време) често пропуска
+// тясно специфични теми, докато целенасочено търсене за въпроса веднага ги
+// намира, дори при нисък брой гласове.
+const SEARCH_RESULT_LIMIT = 10;
+const SEARCH_COMMENT_LIMIT = 15;
 
 // С малки букви нарочно - Reddit имената на сабредити са case-insensitive,
 // а нормализирането максимизира cache hit-овете между различни потребители.
@@ -23,27 +29,57 @@ function sanitizeSubreddit(raw) {
   return String(raw || '').trim().replace(/^\/?r\//i, '').replace(/[^a-zA-Z0-9_]/g, '').toLowerCase();
 }
 
+// Обединява топ100-кеша с допълнителните search-по-relevance постове за
+// конкретния въпрос: search постовете отиват първи (priorityIds), за да не
+// бъдат изместени от бюджета на LLM контекста от по-висoкогласови, но
+// нерелевантни постове (виж buildContext в llm.js). Дублати (пост вече
+// присъстващ в топ100-кеша) се махат от search списъка.
+function mergeSearchPosts(cachePosts, extraPosts) {
+  const cacheIds = new Set(cachePosts.map((p) => p.id));
+  const newFromSearch = (Array.isArray(extraPosts) ? extraPosts : []).filter((p) => p && p.id && !cacheIds.has(p.id));
+  return { posts: [...newFromSearch, ...cachePosts], priorityIds: newFromSearch.map((p) => p.id) };
+}
+
 module.exports = function createTopicsRouter({ pool, requireAuth }) {
   const router = express.Router();
 
-  // ===================== Споделена кеш опашка за сабредити =====================
-  const cacheQueue = []; // масив от subreddit_cache.id
-  let cacheRunningId = null;
-  const cacheStatusText = new Map(); // subreddit_cache.id -> текущо съобщение за прогрес
-  const pendingTopics = new Map(); // topicId -> { waitingOn: Set<cacheId>, subreddits: string[], query, extended, timeFilter, postCount }
+  // ===================== Споделена опашка (кеш-скрейпове + search-по-relevance) =====================
+  // Единна опашка за ДВА вида фонова работа - и двете стартират реален Playwright
+  // browser, затова се изпълняват стриктно последователно (едно по едно), за да
+  // не гърми паметта с няколко Chromium инстанции едновременно:
+  //   'cache'  - общия топ100-скрейп на цял сабредит (споделен между потребители)
+  //   'search' - search-по-relevance само за конкретния въпрос на една тема
+  const workQueue = []; // масив от job keys (виж cacheKey/searchKey)
+  let runningKey = null;
+  const workItems = new Map(); // key -> { type:'cache', cacheId } | { type:'search', topicId, subreddit, query }
+  const statusText = new Map(); // key -> текущо съобщение за прогрес
+  const pendingTopics = new Map(); // topicId -> { waitingOn: Set<key>, subreddits: string[], query, extended, timeFilter, postCount }
 
-  function processCacheQueue() {
-    if (cacheRunningId) return;
-    const id = cacheQueue.shift();
-    if (id === undefined) return;
-    cacheRunningId = id;
-    runCacheScrape(id).finally(() => {
-      cacheRunningId = null;
-      processCacheQueue();
+  const cacheKey = (cacheId) => `cache:${cacheId}`;
+  const searchKey = (topicId, subreddit) => `search:${topicId}:${subreddit}`;
+
+  function enqueueJob(key, item) {
+    if (workItems.has(key)) return; // вече чака в опашката или тече в момента
+    workItems.set(key, item);
+    if (runningKey !== key) workQueue.push(key);
+  }
+
+  function processQueue() {
+    if (runningKey) return;
+    const key = workQueue.shift();
+    if (key === undefined) return;
+    const item = workItems.get(key);
+    if (!item) return processQueue();
+    runningKey = key;
+    const run = item.type === 'cache' ? runCacheScrape(key, item.cacheId) : runSearchScrape(key, item);
+    run.finally(() => {
+      workItems.delete(key);
+      runningKey = null;
+      processQueue();
     });
   }
 
-  async function runCacheScrape(id) {
+  async function runCacheScrape(key, id) {
     const row = (await pool.query('SELECT * FROM subreddit_cache WHERE id=$1', [id])).rows[0];
     if (!row) return;
 
@@ -57,7 +93,7 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
     const sinceDate = isIncremental ? new Date(row.updated_at).toISOString() : null;
 
     await pool.query("UPDATE subreddit_cache SET status='running', updated_at=now() WHERE id=$1", [id]);
-    cacheStatusText.set(id, `Скрейпване на r/${row.subreddit}...`);
+    statusText.set(key, `Скрейпване на r/${row.subreddit}...`);
     try {
       const newPosts = await scrapeSubreddit(
         {
@@ -69,8 +105,8 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
           sinceDate,
         },
         (evt) =>
-          cacheStatusText.set(
-            id,
+          statusText.set(
+            key,
             `r/${row.subreddit}${isIncremental ? ' (само нови постове)' : ''}: ${evt.message}`
           )
       );
@@ -94,8 +130,33 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
         [id, err.message || String(err)]
       );
     } finally {
-      cacheStatusText.delete(id);
-      await checkPendingTopics(id);
+      statusText.delete(key);
+      await checkPendingTopics(key);
+    }
+  }
+
+  async function runSearchScrape(key, item) {
+    statusText.set(key, `Търсене по релевантност в r/${item.subreddit}...`);
+    let posts = [];
+    try {
+      posts = await searchSubredditRelevance(
+        { subreddit: item.subreddit, query: item.query, limit: SEARCH_RESULT_LIMIT, commentLimit: SEARCH_COMMENT_LIMIT },
+        (evt) => statusText.set(key, evt.message)
+      );
+    } catch (err) {
+      // search-ът е допълнение, не критичен източник - темата продължава
+      // само с общия топ100 кеш, ако това се провали.
+      posts = [];
+    } finally {
+      await pool
+        .query("UPDATE topics SET search_posts = COALESCE(search_posts, '{}'::jsonb) || jsonb_build_object($2::text, $3::jsonb) WHERE id=$1", [
+          item.topicId,
+          item.subreddit,
+          JSON.stringify(posts),
+        ])
+        .catch(() => {});
+      statusText.delete(key);
+      await checkPendingTopics(key);
     }
   }
 
@@ -138,23 +199,32 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
       ).rows[0];
     }
 
-    if (!cacheQueue.includes(row.id) && cacheRunningId !== row.id) cacheQueue.push(row.id);
+    enqueueJob(cacheKey(row.id), { type: 'cache', cacheId: row.id });
     return row;
   }
 
-  async function buildWaitingOn(subreddits, userId, timeFilter) {
+  // За всеки сабредит: (1) осигурява топ100-кеша (споделен, преизползваем) и
+  // (2) ВИНАГИ пуска отделно search-по-relevance за точно този въпрос (не се
+  // преизползва между теми, специфично е за въпроса) - затова waitingOn
+  // практически никога не е празен, дори когато топ100-кешът вече е пресен.
+  async function buildWaitingOn(subreddits, userId, timeFilter, topicId, query) {
     const waitingOn = new Set();
     for (const sub of subreddits) {
       const row = await getOrCreateCacheEntry(sub, userId, timeFilter);
-      if (row.status !== 'done') waitingOn.add(row.id);
+      if (row.status !== 'done') waitingOn.add(cacheKey(row.id));
+
+      const sKey = searchKey(topicId, sub);
+      enqueueJob(sKey, { type: 'search', topicId, subreddit: sub, query });
+      waitingOn.add(sKey);
     }
+    processQueue();
     return waitingOn;
   }
 
-  async function checkPendingTopics(finishedCacheId) {
+  async function checkPendingTopics(finishedKey) {
     for (const [topicId, pending] of pendingTopics.entries()) {
-      if (!pending.waitingOn.has(finishedCacheId)) continue;
-      pending.waitingOn.delete(finishedCacheId);
+      if (!pending.waitingOn.has(finishedKey)) continue;
+      pending.waitingOn.delete(finishedKey);
       if (pending.waitingOn.size === 0) {
         pendingTopics.delete(topicId);
         await finalizeTopic(topicId, pending);
@@ -184,10 +254,13 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
       // Ако само ЧАСТ от сабредитите се провалят (напр. грешно/несъществуващо
       // име), продължаваме с останалите вместо да проваляме цялата тема -
       // потребителят иначе може да чака с часове за нищо заради един лош ред.
-      const subredditsData = succeeded.map((s) => ({
-        subreddit: s,
-        posts: bySubreddit.get(s).posts.slice(0, pending.postCount || DEFAULT_POST_COUNT),
-      }));
+      const topicRow = (await pool.query('SELECT search_posts FROM topics WHERE id=$1', [topicId])).rows[0];
+      const searchPosts = (topicRow && topicRow.search_posts) || {};
+      const subredditsData = succeeded.map((s) => {
+        const cachePosts = bySubreddit.get(s).posts.slice(0, pending.postCount || DEFAULT_POST_COUNT);
+        const merged = mergeSearchPosts(cachePosts, searchPosts[s]);
+        return { subreddit: s, posts: merged.posts, priorityIds: merged.priorityIds };
+      });
       const { answer } = await generateDigest({
         subredditsData,
         query: pending.query,
@@ -228,7 +301,7 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
       ).rows[0];
       if (!firstMsg) continue;
 
-      const waitingOn = await buildWaitingOn(topic.subreddits, topic.user_id, topic.time_filter);
+      const waitingOn = await buildWaitingOn(topic.subreddits, topic.user_id, topic.time_filter, topic.id, firstMsg.content);
       const pendingData = {
         subreddits: topic.subreddits,
         query: firstMsg.content,
@@ -242,7 +315,7 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
         pendingTopics.set(topic.id, { waitingOn, ...pendingData });
       }
     }
-    processCacheQueue();
+    processQueue();
   }
 
   // ===================== Routes =====================
@@ -323,7 +396,7 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
       )
       .catch(() => {});
 
-    const waitingOn = await buildWaitingOn(cleanSubs, req.user.id, cleanTimeFilter);
+    const waitingOn = await buildWaitingOn(cleanSubs, req.user.id, cleanTimeFilter, topicId, cleanQuery);
     const pendingData = {
       subreddits: cleanSubs,
       query: cleanQuery,
@@ -333,11 +406,11 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
     };
 
     if (waitingOn.size === 0) {
-      // всичко вече е в кеша - генерираме дайджеста веднага (async, не блокираме отговора)
+      // теоретичен fallback (напр. без сабредити) - на практика waitingOn
+      // винаги съдържа поне search job-овете, виж buildWaitingOn.
       finalizeTopic(topicId, pendingData);
     } else {
       pendingTopics.set(topicId, { waitingOn, ...pendingData });
-      processCacheQueue();
     }
 
     res.json({ topicId });
@@ -372,9 +445,9 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
     const pending = pendingTopics.get(req.params.id);
     let progressMessage = null;
     if (pending) {
-      for (const cacheId of pending.waitingOn) {
-        if (cacheStatusText.has(cacheId)) {
-          progressMessage = cacheStatusText.get(cacheId);
+      for (const key of pending.waitingOn) {
+        if (statusText.has(key)) {
+          progressMessage = statusText.get(key);
           break;
         }
       }
@@ -404,7 +477,12 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
       if (!rows.length) {
         return res.status(409).json({ error: 'Липсват кеширани данни за сабредитите на тази тема.' });
       }
-      const subredditsData = rows.map((r) => ({ subreddit: r.subreddit, posts: r.posts.slice(0, found.topic.post_count || DEFAULT_POST_COUNT) }));
+      const searchPosts = found.topic.search_posts || {};
+      const subredditsData = rows.map((r) => {
+        const cachePosts = r.posts.slice(0, found.topic.post_count || DEFAULT_POST_COUNT);
+        const merged = mergeSearchPosts(cachePosts, searchPosts[r.subreddit]);
+        return { subreddit: r.subreddit, posts: merged.posts, priorityIds: merged.priorityIds };
+      });
 
       await pool.query('INSERT INTO topic_messages (topic_id, role, content) VALUES ($1,$2,$3)', [req.params.id, 'user', cleanContent]);
 

@@ -8,8 +8,17 @@ const LLM_ENABLED = Boolean(OPENROUTER_API_KEY);
  * Изгражда текстов контекст от скрейпнатите постове, подредени по гласове,
  * подрязвайки съдържанието докато остане в границите на бюджета символи.
  */
-function buildContext(posts, budget = CONTEXT_CHAR_BUDGET) {
-  const sorted = [...posts].sort((a, b) => (b.votes || 0) - (a.votes || 0));
+function buildContext(posts, budget = CONTEXT_CHAR_BUDGET, priorityIds = new Set()) {
+  // priorityIds (постове, намерени чрез целенасоченото search-по-relevance за
+  // самия въпрос) винаги отиват най-отпред, независимо от гласовете им - иначе
+  // нискогласов, но точно релевантен пост би бил изместен извън бюджета от
+  // висoкогласови, но нерелевантни постове от общия топ100.
+  const sorted = [...posts].sort((a, b) => {
+    const aPri = priorityIds.has(a.id) ? 1 : 0;
+    const bPri = priorityIds.has(b.id) ? 1 : 0;
+    if (aPri !== bPri) return bPri - aPri;
+    return (b.votes || 0) - (a.votes || 0);
+  });
   let used = 0;
   let truncatedCount = 0;
   const chunks = [];
@@ -19,7 +28,8 @@ function buildContext(posts, budget = CONTEXT_CHAR_BUDGET) {
       truncatedCount++;
       continue;
     }
-    let entry = `### "${p.title}" (автор: ${p.author}, гласове: ${p.votes ?? '?'}, коментари: ${p.comments ?? 0}, дата: ${(p.date || '').slice(0, 10)})\nURL: ${p.url}\n`;
+    const priorityTag = priorityIds.has(p.id) ? ' [намерено чрез целенасочено търсене по въпроса]' : '';
+    let entry = `### "${p.title}"${priorityTag} (автор: ${p.author}, гласове: ${p.votes ?? '?'}, коментари: ${p.comments ?? 0}, дата: ${(p.date || '').slice(0, 10)})\nURL: ${p.url}\n`;
     if (p.bodyText) {
       entry += `Текст на поста: ${p.bodyText.slice(0, 2500)}\n`;
     }
@@ -55,8 +65,8 @@ function buildMultiContext(subredditsData) {
   let anyTruncated = false;
   const summary = [];
 
-  for (const { subreddit, posts } of subredditsData) {
-    const { text, includedCount, totalCount, truncated } = buildContext(posts, perSubBudget);
+  for (const { subreddit, posts, priorityIds } of subredditsData) {
+    const { text, includedCount, totalCount, truncated } = buildContext(posts, perSubBudget, new Set(priorityIds || []));
     if (truncated) anyTruncated = true;
     summary.push(`r/${subreddit}: ${includedCount}/${totalCount} поста`);
     sections.push(`## Данни от r/${subreddit}\n\n${text}`);

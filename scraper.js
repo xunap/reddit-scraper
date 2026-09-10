@@ -24,6 +24,10 @@ function buildListingUrl(subreddit, sort, timeFilter) {
   return `${base}/`; // hot (default feed)
 }
 
+function buildSearchUrl(subreddit, query) {
+  return `https://www.reddit.com/r/${encodeURIComponent(subreddit)}/search/?q=${encodeURIComponent(query)}&restrict_sr=1&sort=relevance`;
+}
+
 async function extractVisiblePosts(page) {
   return page.$$eval('shreddit-post', (posts) =>
     posts.map((el) => {
@@ -115,6 +119,128 @@ async function dismissCookieBanner(page) {
     await page.getByRole('button', { name: /accept all/i }).click({ timeout: 4000 });
   } catch (e) {
     // банерът може да липсва
+  }
+}
+
+// Search резултатите на Reddit НЕ използват shreddit-post елементи както
+// listing страниците (hot/new/top) - постовете там са обикновени
+// <a href="/.../comments/...">, всеки линк дублиран (thumbnail + заглавие).
+// Затова взимаме само URL-ите оттук; пълните метаданни (автор, гласове,
+// коментари, дата) се четат по-долу от shreddit-post елемента на самата
+// страница на всеки пост, който вече посещаваме за текст/коментари.
+async function extractSearchResultLinks(page, limit) {
+  return page.evaluate((limit) => {
+    const links = Array.from(document.querySelectorAll('a[href*="/comments/"]'));
+    const seen = new Set();
+    const out = [];
+    for (const a of links) {
+      const href = a.href.split('?')[0];
+      if (seen.has(href)) continue;
+      seen.add(href);
+      out.push(href);
+      if (out.length >= limit) break;
+    }
+    return out;
+  }, limit);
+}
+
+async function extractPostMeta(page) {
+  try {
+    return await page.$eval('shreddit-post', (el) => {
+      const scoreAttr = el.getAttribute('score');
+      const commentAttr = el.getAttribute('comment-count');
+      return {
+        id: el.id,
+        title: el.getAttribute('post-title'),
+        author: el.getAttribute('author') || '[deleted]',
+        votes: scoreAttr !== null && !isNaN(scoreAttr) ? Number(scoreAttr) : null,
+        comments: commentAttr !== null && !isNaN(commentAttr) ? Number(commentAttr) : 0,
+        postType: el.getAttribute('post-type'),
+        createdRaw: el.getAttribute('created-timestamp'),
+      };
+    });
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Допълнително търсене В рамките на един сабредит по конкретния въпрос на
+ * потребителя (sort=relevance, restrict_sr=1) - за случаите, когато общият
+ * топ100 на сабредита (сортиран по гласове за цялото време) просто не
+ * съдържа постове по тясно специфична тема, но целенасочено търсене намира
+ * веднага релевантни резултати.
+ * @param {object} opts
+ * @param {string} opts.subreddit
+ * @param {string} opts.query
+ * @param {number} [opts.limit] - макс. брой резултати (топ по relevance)
+ * @param {number} [opts.commentLimit] - топ коментари на пост
+ */
+async function searchSubredditRelevance({ subreddit, query, limit = 10, commentLimit = 20 }, onProgress = () => {}) {
+  const browser = await chromium.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-dev-shm-usage'],
+  });
+
+  try {
+    const context = await browser.newContext({
+      userAgent:
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+      viewport: { width: 1280, height: 900 },
+    });
+    const page = await context.newPage();
+    page.setDefaultTimeout(30000);
+
+    const url = buildSearchUrl(subreddit, query);
+    onProgress({ phase: 'search', message: `Търсене по релевантност в r/${subreddit}: "${query}"` });
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await dismissCookieBanner(page);
+    await page.waitForTimeout(2000); // резултатите се хидратират клиентски, не са налични веднага при domcontentloaded
+
+    const links = await extractSearchResultLinks(page, limit);
+    onProgress({
+      phase: 'search',
+      message: `Намерени ${links.length} резултата по релевантност в r/${subreddit}`,
+      current: 0,
+      total: links.length,
+    });
+
+    const posts = [];
+    for (let i = 0; i < links.length; i++) {
+      const postUrl = links[i];
+      onProgress({ phase: 'search-details', message: `[${i + 1}/${links.length}] r/${subreddit}: ${postUrl}`, current: i + 1, total: links.length });
+      try {
+        await page.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 25000 });
+        await page.waitForTimeout(1200);
+        const meta = await extractPostMeta(page);
+        if (!meta || !meta.title) continue;
+        let date = null;
+        if (meta.createdRaw) {
+          const d = new Date(meta.createdRaw);
+          date = isNaN(d.getTime()) ? meta.createdRaw : d.toISOString();
+        }
+        posts.push({
+          id: meta.id,
+          title: meta.title,
+          author: meta.author,
+          votes: meta.votes,
+          comments: meta.comments,
+          url: postUrl,
+          postType: meta.postType,
+          date,
+          bodyText: await extractPostBody(page),
+          topComments: await extractTopComments(page, commentLimit),
+        });
+      } catch (err) {
+        // пропускаме единичен проблемен резултат, не проваляме цялото търсене заради него
+      }
+      await randomDelay(800, 1800);
+    }
+
+    onProgress({ phase: 'search-done', message: `Готово: ${posts.length} поста от търсенето по релевантност в r/${subreddit}.` });
+    return posts;
+  } finally {
+    await browser.close();
   }
 }
 
@@ -264,4 +390,4 @@ async function scrapeSubreddit(opts, onProgress = () => {}) {
   }
 }
 
-module.exports = { scrapeSubreddit };
+module.exports = { scrapeSubreddit, searchSubredditRelevance };
