@@ -10,11 +10,12 @@
   const topicSubmit = document.getElementById('topic-submit');
   const topicFormError = document.getElementById('topic-form-error');
   const topicQuery = document.getElementById('topic-query');
-  const topicSubsList = document.getElementById('topic-subs-list');
-  const topicSubAdd = document.getElementById('topic-sub-add');
+  const topicSubsTags = document.getElementById('topic-subs-tags');
+  const topicSubText = document.getElementById('topic-sub-text');
+  const topicSubPrefix = document.getElementById('topic-sub-prefix');
   const topicSuggestBtn = document.getElementById('topic-suggest-btn');
   const topicSuggestChips = document.getElementById('topic-suggest-chips');
-  const MAX_SUBREDDIT_ROWS = 10;
+  const MAX_SUBREDDIT_TAGS = 10;
   const topicTimeFilter = document.getElementById('topic-time-filter');
   const topicExtended = document.getElementById('topic-extended');
 
@@ -29,52 +30,88 @@
     textarea.addEventListener('input', () => autoResize(textarea));
   }
 
-  // ===================== Динамичен списък със сабредити =====================
+  // ===================== Тагове за сабредити (единен инпут, до 10) =====================
 
-  function updateSubAddState() {
-    const count = topicSubsList.querySelectorAll('.topic-sub-row').length;
-    topicSubAdd.disabled = count >= MAX_SUBREDDIT_ROWS;
-    topicSubsList.querySelectorAll('.topic-sub-remove').forEach((btn) => {
-      btn.hidden = topicSubsList.querySelectorAll('.topic-sub-row').length <= 1;
-    });
+  let subTags = [];
+
+  // Само латиница/цифри/долна черта, докато пишеш - Reddit имената на
+  // сабредити не поддържат нищо друго, а така случайно превключена кирилица
+  // (или каквато и да е друга азбука) никога не влиза в полето.
+  function filterSubText() {
+    const cleaned = topicSubText.value.replace(/^\/?r\//i, '').replace(/[^a-zA-Z0-9_]/g, '');
+    if (cleaned !== topicSubText.value) topicSubText.value = cleaned;
   }
 
-  function addSubRow() {
-    if (topicSubsList.querySelectorAll('.topic-sub-row').length >= MAX_SUBREDDIT_ROWS) return;
-    const row = document.createElement('div');
-    row.className = 'topic-sub-row';
-    row.innerHTML = `
-      <div class="prefix-input"><span>r/</span><input type="text" class="topic-sub-input" autocomplete="off"></div>
-      <button type="button" class="topic-sub-remove" aria-label="Remove">&times;</button>
-    `;
-    row.querySelector('.topic-sub-remove').addEventListener('click', () => {
-      row.remove();
-      updateSubAddState();
+  function renderSubTags() {
+    topicSubsTags.querySelectorAll('.sub-tag').forEach((el) => el.remove());
+    subTags.forEach((name) => {
+      const tag = document.createElement('span');
+      tag.className = 'sub-tag';
+      tag.innerHTML = `<span class="tag-prefix">r/</span><span>${escapeHtml(name)}</span>`;
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'tag-remove';
+      removeBtn.innerHTML = '&times;';
+      removeBtn.setAttribute('aria-label', 'Remove');
+      removeBtn.addEventListener('click', () => removeSubTag(name));
+      tag.appendChild(removeBtn);
+      topicSubsTags.insertBefore(tag, topicSubPrefix);
     });
-    topicSubsList.appendChild(row);
-    updateSubAddState();
-    row.querySelector('.topic-sub-input').focus();
+    const atMax = subTags.length >= MAX_SUBREDDIT_TAGS;
+    topicSubPrefix.hidden = atMax;
+    topicSubText.hidden = atMax;
+    if (atMax) closeAutocomplete();
   }
 
-  function resetSubRows() {
-    topicSubsList.querySelectorAll('.topic-sub-row').forEach((row, i) => {
-      if (i === 0) row.querySelector('.topic-sub-input').value = '';
-      else row.remove();
-    });
+  function addSubTag(name) {
+    const clean = String(name || '').replace(/^\/?r\//i, '').replace(/[^a-zA-Z0-9_]/g, '');
+    if (!clean || subTags.length >= MAX_SUBREDDIT_TAGS) return false;
+    if (subTags.some((s) => s.toLowerCase() === clean.toLowerCase())) return false;
+    subTags.push(clean);
+    renderSubTags();
+    return true;
+  }
+
+  function removeSubTag(name) {
+    subTags = subTags.filter((s) => s !== name);
+    renderSubTags();
+    topicSubText.focus();
+  }
+
+  function resetSubTags() {
+    subTags = [];
+    topicSubText.value = '';
     topicSuggestChips.innerHTML = '';
-    updateSubAddState();
+    renderSubTags();
+  }
+
+  function commitPendingSubText() {
+    const val = topicSubText.value.trim();
+    if (val) {
+      addSubTag(val);
+      topicSubText.value = '';
+    }
   }
 
   function addSubredditByName(name) {
-    const emptyInput = [...topicSubsList.querySelectorAll('.topic-sub-input')].find((el) => !el.value.trim());
-    if (emptyInput) {
-      emptyInput.value = name;
-      return;
-    }
-    addSubRow();
-    const inputs = topicSubsList.querySelectorAll('.topic-sub-input');
-    inputs[inputs.length - 1].value = name;
+    addSubTag(name);
   }
+
+  topicSubText.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      commitPendingSubText();
+      closeAutocomplete();
+    } else if (e.key === 'Backspace' && !topicSubText.value && subTags.length) {
+      removeSubTag(subTags[subTags.length - 1]);
+    }
+  });
+
+  // Клик някъде другаде в кутията (не върху таг/бутон) фокусира инпута -
+  // прави цялата кутия да се държи като едно поле, не само тесния текст input.
+  topicSubsTags.addEventListener('click', (e) => {
+    if (e.target === topicSubsTags) topicSubText.focus();
+  });
 
   function renderSuggestChips(names) {
     topicSuggestChips.innerHTML = '';
@@ -91,8 +128,6 @@
     });
   }
 
-  topicSubAdd.addEventListener('click', addSubRow);
-
   topicSuggestBtn.addEventListener('click', async () => {
     const query = topicQuery.value.trim();
     if (!query) {
@@ -101,7 +136,7 @@
       return;
     }
     topicFormError.hidden = true;
-    const existingSubreddits = [...topicSubsList.querySelectorAll('.topic-sub-input')].map((el) => el.value.trim()).filter(Boolean);
+    const existingSubreddits = subTags.slice();
     topicSuggestBtn.disabled = true;
     const originalText = topicSuggestBtn.textContent;
     topicSuggestBtn.textContent = I18N.t('topic_suggest_loading');
@@ -123,11 +158,9 @@
     }
   });
 
-  updateSubAddState();
+  renderSubTags();
 
   // ===================== Autocomplete за имена на сабредити =====================
-  // Event delegation върху контейнера - работи автоматично и за редовете,
-  // добавени динамично по-късно от addSubRow().
 
   let acDropdown = null;
   let acAbortController = null;
@@ -140,7 +173,7 @@
     }
   }
 
-  function renderAutocomplete(input, results) {
+  function renderAutocomplete(results) {
     closeAutocomplete();
     if (!results.length) return;
     const dropdown = document.createElement('div');
@@ -153,22 +186,20 @@
       // mousedown (не click) за да хванем избора преди input-ът да загуби фокус.
       item.addEventListener('mousedown', (e) => {
         e.preventDefault();
-        input.value = r.name;
+        addSubTag(r.name);
+        topicSubText.value = '';
         closeAutocomplete();
       });
       dropdown.appendChild(item);
     });
-    // Слага се на нивото на целия ред (не на .prefix-input, който има
-    // overflow:hidden заради заоблените ъгли и би отрязал падащото меню).
-    input.closest('.topic-sub-row').appendChild(dropdown);
+    topicSubsTags.appendChild(dropdown);
     acDropdown = dropdown;
   }
 
-  topicSubsList.addEventListener('input', (e) => {
-    if (!e.target.classList.contains('topic-sub-input')) return;
-    const input = e.target;
+  topicSubText.addEventListener('input', () => {
+    filterSubText();
     clearTimeout(acDebounceTimer);
-    const q = input.value.trim();
+    const q = topicSubText.value.trim();
     if (q.length < 2) {
       closeAutocomplete();
       return;
@@ -179,15 +210,14 @@
       try {
         const res = await fetch(`/api/subreddits/autocomplete?q=${encodeURIComponent(q)}`, { signal: acAbortController.signal });
         const data = await res.json();
-        if (document.activeElement === input) renderAutocomplete(input, data.results || []);
+        if (document.activeElement === topicSubText) renderAutocomplete(data.results || []);
       } catch (err) {
         // тихо - автодовършването не е критично
       }
     }, 250);
   });
 
-  topicSubsList.addEventListener('focusout', (e) => {
-    if (!e.target.classList.contains('topic-sub-input')) return;
+  topicSubText.addEventListener('focusout', () => {
     // малко отлагане, за да може mousedown върху резултат да отработи първо
     setTimeout(closeAutocomplete, 150);
   });
@@ -360,9 +390,16 @@
     topicStatusBadge.className = 'badge ' + status;
   }
 
+  // Полето си остава активно докато чака отговор (за да можеш да пишеш
+  // следващия въпрос междувременно) - само бутонът се блокира, за да не се
+  // изпрати нищо преди текущият отговор да е готов.
   function setFollowupEnabled(enabled) {
-    topicFollowupInput.disabled = !enabled;
     topicFollowupSubmit.disabled = !enabled;
+  }
+
+  function scrollToBottomAndFocusFollowup() {
+    window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' });
+    topicFollowupInput.focus();
   }
 
   async function openTopic(topicId) {
@@ -403,6 +440,7 @@
     }
 
     loadTopicList();
+    scrollToBottomAndFocusFollowup();
   }
 
   function startPolling(topicId) {
@@ -429,6 +467,7 @@
         full.messages.forEach(renderMessage);
         setFollowupEnabled(true);
         loadTopicList();
+        scrollToBottomAndFocusFollowup();
       } else if (data.status === 'error') {
         clearInterval(pollTimer);
         topicLoader.hidden = true;
@@ -464,7 +503,7 @@
     topicThreadPanel.hidden = true;
     topicComposer.hidden = false;
     topicForm.reset();
-    resetSubRows();
+    resetSubTags();
     autoResize(topicQuery);
     topicFormError.hidden = true;
     topicList.querySelectorAll('.history-item.active').forEach((el) => el.classList.remove('active'));
@@ -499,10 +538,15 @@
   topicForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     topicFormError.hidden = true;
+    commitPendingSubText();
+    const subreddits = subTags.slice();
+    if (!subreddits.length) {
+      topicFormError.textContent = I18N.t('err_topic_need_subreddit');
+      topicFormError.hidden = false;
+      return;
+    }
     topicSubmit.disabled = true;
     topicSubmit.textContent = I18N.t('topic_submit_loading');
-
-    const subreddits = [...topicSubsList.querySelectorAll('.topic-sub-input')].map((el) => el.value.trim()).filter(Boolean);
 
     try {
       const res = await fetch('/api/topics', {
@@ -528,10 +572,14 @@
     }
   });
 
+  let followupInFlight = false;
+
   topicFollowupForm.addEventListener('submit', async (e) => {
     e.preventDefault();
+    if (followupInFlight) return;
     const content = topicFollowupInput.value.trim();
     if (!content || !currentTopicId) return;
+    followupInFlight = true;
     topicThreadError.hidden = true;
     topicFollowupInput.value = '';
     autoResize(topicFollowupInput);
@@ -562,8 +610,9 @@
       topicThreadError.textContent = err.message;
       topicThreadError.hidden = false;
     } finally {
+      followupInFlight = false;
       setFollowupEnabled(true);
-      topicFollowupInput.focus();
+      scrollToBottomAndFocusFollowup();
     }
   });
 
@@ -573,6 +622,13 @@
     if (match) {
       history.replaceState({ topicId: match[1] }, '', location.pathname);
       openTopic(match[1]);
+    } else {
+      // При първоначалното зареждане wireAutoResize()-ът по-горе смята
+      // scrollHeight докато #app-view (родителят) все още е [hidden] по
+      // време на auth проверката - тогава scrollHeight винаги е 0, затова
+      // textarea-та тръгва свита, докато потребителят не напише нещо. Сега
+      // #app-view вече е видим, преизчисляваме.
+      autoResize(topicQuery);
     }
   });
 

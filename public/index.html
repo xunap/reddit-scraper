@@ -60,7 +60,7 @@
   <!-- ===== APP ===== -->
   <main class="app-shell" id="app-view" hidden>
     <div class="app-layout">
-      <aside class="panel history-panel">
+      <aside class="history-panel">
         <button type="button" id="topic-new-btn" class="btn-new-topic">+ <span data-i18n="topic_new">New topic</span></button>
         <div id="topic-list" class="history-list"></div>
       </aside>
@@ -76,12 +76,10 @@
 
             <div class="field">
               <span data-i18n="topic_sub1">Subreddit</span>
-              <div id="topic-subs-list" class="topic-subs-list">
-                <div class="topic-sub-row">
-                  <div class="prefix-input"><span>r/</span><input type="text" class="topic-sub-input" required autocomplete="off"></div>
-                </div>
+              <div id="topic-subs-tags" class="tag-input">
+                <span class="tag-input-prefix" id="topic-sub-prefix">r/</span>
+                <input type="text" id="topic-sub-text" class="tag-input-field" autocomplete="off" data-i18n-placeholder="topic_sub_placeholder" placeholder="type and press Enter">
               </div>
-              <button type="button" id="topic-sub-add" class="btn-add-sub">+ <span data-i18n="topic_sub_add">Add subreddit</span></button>
               <button type="button" id="topic-suggest-btn" class="btn-add-sub" data-i18n="topic_suggest_btn">Suggest related subreddits</button>
               <div id="topic-suggest-chips" class="topic-suggest-chips"></div>
             </div>
