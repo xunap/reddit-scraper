@@ -140,12 +140,6 @@
     }
   }
 
-  function formatSubscribers(n) {
-    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
-    if (n >= 1000) return Math.round(n / 1000) + 'K';
-    return String(n);
-  }
-
   function renderAutocomplete(input, results) {
     closeAutocomplete();
     if (!results.length) return;
@@ -155,7 +149,7 @@
       const item = document.createElement('button');
       item.type = 'button';
       item.className = 'sub-autocomplete-item';
-      item.innerHTML = `<span>r/${escapeHtml(r.name)}</span>${r.subscribers ? `<span class="sub-autocomplete-count">${formatSubscribers(r.subscribers)}</span>` : ''}`;
+      item.innerHTML = `<span>r/${escapeHtml(r.name)}</span>`;
       // mousedown (не click) за да хванем избора преди input-ът да загуби фокус.
       item.addEventListener('mousedown', (e) => {
         e.preventDefault();

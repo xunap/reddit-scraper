@@ -23,27 +23,6 @@ function sanitizeSubreddit(raw) {
   return String(raw || '').trim().replace(/^\/?r\//i, '').replace(/[^a-zA-Z0-9_]/g, '').toLowerCase();
 }
 
-const REDDIT_FETCH_HEADERS = { 'User-Agent': 'reddit-scraper-app/1.0 (by /u/xunap)' };
-
-// Бърза проверка дали сабредитът реално съществува, преди да го пуснем в
-// browser опашката - иначе грешно/несъществуващо име чака зад други скрейпове
-// и после фейлва след дълго чакане (виж shreddit-post timeout в scraper.js).
-async function subredditExists(name) {
-  try {
-    const res = await fetch(`https://www.reddit.com/r/${encodeURIComponent(name)}/about.json`, {
-      headers: REDDIT_FETCH_HEADERS,
-      signal: AbortSignal.timeout(6000),
-    });
-    if (res.status === 404) return false;
-    if (!res.ok) return true; // несигурно (rate-limit и т.н.) - не блокираме заради проверката
-    const data = await res.json().catch(() => null);
-    if (data && data.reason === 'banned') return false;
-    return true;
-  } catch (err) {
-    return true; // мрежова грешка в самата проверка - не пречим на потребителя заради нея
-  }
-}
-
 module.exports = function createTopicsRouter({ pool, requireAuth }) {
   const router = express.Router();
 
@@ -268,21 +247,22 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
 
   // ===================== Routes =====================
 
+  // Reddit блокира обикновени (non-browser) HTTP заявки към JSON API-то си
+  // (403 дори за валидни сабредити), затова истинско live autocomplete срещу
+  // целия Reddit не е възможно без пълен browser per keystroke - твърде бавно
+  // и тежко за typeahead. Вместо това предлагаме от собствения ни кеш
+  // (сабредити, които вече е скрейпвал някой потребител) - мигновено, без
+  // мрежова заявка навън.
   router.get('/api/subreddits/autocomplete', requireAuth, async (req, res) => {
-    const q = String(req.query.q || '').trim();
+    const q = String(req.query.q || '').trim().toLowerCase();
     if (q.length < 2) return res.json({ results: [] });
-    try {
-      const url = `https://www.reddit.com/api/subreddit_autocomplete_v2.json?query=${encodeURIComponent(q)}&limit=8&include_over_18=false&include_profiles=false&typeahead_active=true`;
-      const r = await fetch(url, { headers: REDDIT_FETCH_HEADERS, signal: AbortSignal.timeout(5000) });
-      if (!r.ok) return res.json({ results: [] });
-      const data = await r.json();
-      const results = (data?.data?.children || [])
-        .map((c) => ({ name: c.data.display_name, subscribers: c.data.subscribers || 0 }))
-        .filter((r) => r.name);
-      res.json({ results });
-    } catch (err) {
-      res.json({ results: [] }); // тих fallback - автодовършването не е критично за работата на приложението
-    }
+    const rows = (
+      await pool.query(
+        "SELECT DISTINCT subreddit FROM subreddit_cache WHERE subreddit ILIKE $1 AND status='done' ORDER BY subreddit ASC LIMIT 8",
+        [q.replace(/[%_]/g, '\\$&') + '%']
+      )
+    ).rows;
+    res.json({ results: rows.map((r) => ({ name: r.subreddit })) });
   });
 
   router.post('/api/topics/suggest-subreddits', requireAuth, async (req, res) => {
@@ -317,14 +297,6 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
     const cleanQuery = String(query || '').trim();
     if (!cleanQuery) return res.status(400).json({ error: 'Липсва въпрос/тема.' });
     if (cleanQuery.length > 2000) return res.status(400).json({ error: 'Въпросът е твърде дълъг (макс. 2000 символа).' });
-
-    const existenceChecks = await Promise.all(cleanSubs.map(async (s) => ({ sub: s, exists: await subredditExists(s) })));
-    const missingSubs = existenceChecks.filter((c) => !c.exists).map((c) => c.sub);
-    if (missingSubs.length) {
-      return res.status(400).json({
-        error: `Не намерихме тези сабредити (провери за правописна грешка): ${missingSubs.map((s) => 'r/' + s).join(', ')}.`,
-      });
-    }
 
     const cleanPostCount = DEFAULT_POST_COUNT;
     const cleanExtended = Boolean(extended);

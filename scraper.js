@@ -154,6 +154,21 @@ async function scrapeSubreddit(opts, onProgress = () => {}) {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await dismissCookieBanner(page);
 
+    // Бърза проверка дали сабредитът изобщо съществува, преди да чакаме пълните
+    // 15s за постове: заглавният h1 на реална страница е "r/<име>", докато на
+    // несъществуващ/забранен сабредит Reddit никога не рендира такъв h1 (връща
+    // generic 200 SPA страница, не истинско HTTP 404, затова не може да се
+    // разчита на статус кода). Пести ~10s+ забавяне при сгрешено име.
+    onProgress({ phase: 'listing', message: `Проверка дали r/${subreddit} съществува...` });
+    const h1Text = await page
+      .locator('h1')
+      .first()
+      .textContent({ timeout: 6000 })
+      .catch(() => null);
+    if (!h1Text || !new RegExp(`^\\s*r/${subreddit}\\s*$`, 'i').test(h1Text)) {
+      throw new Error(`r/${subreddit} не съществува или не е достъпен (възможна е правописна грешка).`);
+    }
+
     try {
       await page.waitForSelector('shreddit-post', { timeout: 15000 });
     } catch (err) {
