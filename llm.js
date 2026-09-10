@@ -178,6 +178,21 @@ async function askAboutPosts({ posts, question, subreddit, useOwnKnowledge = fal
   return { answer, includedCount, totalCount, truncated };
 }
 
+/**
+ * Кратко, автоматично заглавие на темата (като чат заглавията в claude.ai),
+ * генерирано от самия въпрос на потребителя вместо просто да го отрязваме.
+ */
+async function generateTopicTitle({ query }) {
+  const languageLabel = detectLanguageLabel(query);
+  const systemPrompt = `Summarize the user's question/topic below into a short chat title, 3 to 6 words, in ${languageLabel}. No quotes, no trailing period, no "r/" prefixes. Respond with ONLY the title text, nothing else.`;
+  const answer = await callOpenRouter([
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: query },
+  ]);
+  const title = answer.trim().replace(/^["'“”]+|["'“”]+$/g, '').slice(0, 100);
+  return title || query.slice(0, 80);
+}
+
 async function suggestSubreddits({ query, existingSubreddits = [] }) {
   const excludeLabel = existingSubreddits.length
     ? `Do not repeat these already-selected subreddits: ${existingSubreddits.map((s) => `r/${s}`).join(', ')}.`
@@ -205,4 +220,4 @@ async function suggestSubreddits({ query, existingSubreddits = [] }) {
   return deduped.slice(0, 5);
 }
 
-module.exports = { askAboutPosts, generateDigest, continueTopicChat, suggestSubreddits, LLM_ENABLED, MODEL };
+module.exports = { askAboutPosts, generateDigest, continueTopicChat, suggestSubreddits, generateTopicTitle, LLM_ENABLED, MODEL };

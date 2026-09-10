@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const express = require('express');
 const { scrapeSubreddit } = require('./scraper');
-const { generateDigest, continueTopicChat, suggestSubreddits, LLM_ENABLED } = require('./llm');
+const { generateDigest, continueTopicChat, suggestSubreddits, generateTopicTitle, LLM_ENABLED } = require('./llm');
 
 const MAX_SUBREDDITS = 10;
 const DIGEST_SORT = 'top';
@@ -293,6 +293,15 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
     );
     await pool.query('INSERT INTO topic_messages (topic_id, role, content) VALUES ($1,$2,$3)', [topicId, 'user', cleanQuery]);
 
+    // Заглавието по-горе е само fallback (отрязаният въпрос); генерираме
+    // истинско кратко резюме в отделен LLM-извикване, без да бавим отговора -
+    // ъпдейтваме реда щом е готово, само ако потребителят вече не го е преименувал.
+    generateTopicTitle({ query: cleanQuery })
+      .then((generatedTitle) =>
+        pool.query('UPDATE topics SET title=$1 WHERE id=$2 AND title_is_custom=false', [generatedTitle, topicId])
+      )
+      .catch(() => {});
+
     const waitingOn = await buildWaitingOn(cleanSubs, req.user.id, cleanTimeFilter);
     const pendingData = {
       subreddits: cleanSubs,
@@ -391,6 +400,23 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
+  });
+
+  router.patch('/api/topics/:id', requireAuth, async (req, res) => {
+    const cleanTitle = String((req.body || {}).title || '').trim().slice(0, 200);
+    if (!cleanTitle) return res.status(400).json({ error: 'Липсва заглавие.' });
+    const result = await pool.query(
+      'UPDATE topics SET title=$1, title_is_custom=true WHERE id=$2 AND user_id=$3 RETURNING id',
+      [cleanTitle, req.params.id, req.user.id]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Темата не е намерена.' });
+    res.json({ ok: true, title: cleanTitle });
+  });
+
+  router.delete('/api/topics/:id', requireAuth, async (req, res) => {
+    const result = await pool.query('DELETE FROM topics WHERE id=$1 AND user_id=$2 RETURNING id', [req.params.id, req.user.id]);
+    if (!result.rows.length) return res.status(404).json({ error: 'Темата не е намерена.' });
+    res.json({ ok: true });
   });
 
   router.recoverIncompleteState = recoverIncompleteState;

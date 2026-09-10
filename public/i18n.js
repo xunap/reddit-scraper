@@ -48,6 +48,11 @@
       status_running: 'running',
       status_done: 'done',
       status_error: 'error',
+      tooltip_rename: 'Rename',
+      tooltip_delete: 'Delete',
+      confirm_delete_topic: 'Delete this topic? This cannot be undone.',
+      err_topic_rename_default: 'Failed to rename.',
+      err_topic_delete_default: 'Failed to delete.',
     },
     bg: {
       brand_sub: 'Playwright · без API',
@@ -95,6 +100,11 @@
       status_running: 'в процес',
       status_done: 'готово',
       status_error: 'грешка',
+      tooltip_rename: 'Преименувай',
+      tooltip_delete: 'Изтрий',
+      confirm_delete_topic: 'Да изтрия ли тази тема? Действието е необратимо.',
+      err_topic_rename_default: 'Неуспешно преименуване.',
+      err_topic_delete_default: 'Неуспешно изтриване.',
     },
   };
 

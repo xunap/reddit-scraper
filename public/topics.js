@@ -2,6 +2,9 @@
   const topicNewBtn = document.getElementById('topic-new-btn');
   const topicList = document.getElementById('topic-list');
 
+  const ICON_RENAME = '<svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M13.5 3.5l3 3L7 16H4v-3L13.5 3.5z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>';
+  const ICON_DELETE = '<svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 6h12M8 6V4.5a1 1 0 011-1h2a1 1 0 011 1V6m-7 0l.6 9.4a1 1 0 001 .9h4.8a1 1 0 001-.9L14 6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
   const topicComposer = document.getElementById('topic-composer');
   const topicForm = document.getElementById('topic-form');
   const topicSubmit = document.getElementById('topic-submit');
@@ -170,19 +173,99 @@
     topicList.innerHTML = data.topics
       .map(
         (t) => `
-      <div class="history-item${t.id === currentTopicId ? ' active' : ''}" data-topic-id="${t.id}">
-        <div class="h-sub">${escapeHtml(t.title)} <span class="h-status ${t.status}">${I18N.t('status_' + t.status)}</span></div>
+      <div class="history-item${t.id === currentTopicId ? ' active' : ''}" data-topic-id="${t.id}" data-title="${escapeHtml(t.title)}">
+        <div class="h-sub"><span class="h-title">${escapeHtml(t.title)}</span> <span class="h-status ${t.status}">${I18N.t('status_' + t.status)}</span></div>
         <div class="h-meta">
           <span>${t.subreddits.map((s) => 'r/' + escapeHtml(s)).join(', ')}</span>
-          <span>${fmtDate(t.updated_at)}</span>
+          <span class="h-right">
+            <span class="h-date">${fmtDate(t.updated_at)}</span>
+            <button type="button" class="h-icon-btn h-rename" title="${I18N.t('tooltip_rename')}" aria-label="${I18N.t('tooltip_rename')}">${ICON_RENAME}</button>
+            <button type="button" class="h-icon-btn h-delete" title="${I18N.t('tooltip_delete')}" aria-label="${I18N.t('tooltip_delete')}">${ICON_DELETE}</button>
+          </span>
         </div>
       </div>`
       )
       .join('');
 
     topicList.querySelectorAll('.history-item').forEach((el) => {
-      el.addEventListener('click', () => openTopic(el.dataset.topicId));
+      const id = el.dataset.topicId;
+      el.addEventListener('click', () => navigateToTopic(id));
+      el.querySelector('.h-rename').addEventListener('click', (e) => {
+        e.stopPropagation();
+        startRenameTopic(el, id);
+      });
+      el.querySelector('.h-delete').addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteTopic(id);
+      });
     });
+  }
+
+  function startRenameTopic(el, id) {
+    const subEl = el.querySelector('.h-sub');
+    const statusEl = subEl.querySelector('.h-status');
+    const currentTitle = el.dataset.title;
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'h-rename-input';
+    input.value = currentTitle;
+    input.maxLength = 200;
+    subEl.innerHTML = '';
+    subEl.appendChild(input);
+    if (statusEl) subEl.appendChild(statusEl);
+    input.focus();
+    input.select();
+
+    let done = false;
+    const commit = async () => {
+      if (done) return;
+      done = true;
+      const newTitle = input.value.trim();
+      if (!newTitle || newTitle === currentTitle) return loadTopicList();
+      try {
+        const res = await fetch(`/api/topics/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: newTitle }),
+        });
+        if (!res.ok) throw new Error();
+        if (id === currentTopicId) topicThreadTitle.textContent = newTitle;
+      } catch (err) {
+        // тихо се отказваме, старото заглавие се връща при следващото loadTopicList
+      }
+      loadTopicList();
+    };
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        input.blur();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        done = true;
+        loadTopicList();
+      }
+    });
+    input.addEventListener('blur', commit);
+  }
+
+  async function deleteTopic(id) {
+    if (!confirm(I18N.t('confirm_delete_topic'))) return;
+    try {
+      const res = await fetch(`/api/topics/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error();
+    } catch (err) {
+      alert(I18N.t('err_topic_delete_default'));
+      return;
+    }
+    if (id === currentTopicId) {
+      currentTopicId = null;
+      clearInterval(pollTimer);
+      topicThreadPanel.hidden = true;
+      topicComposer.hidden = false;
+      navigateToNew();
+    }
+    loadTopicList();
   }
 
   function renderMessage(msg) {
@@ -295,7 +378,20 @@
     }
   }
 
-  topicNewBtn.addEventListener('click', () => {
+  // ===================== URL <-> тема (two-way binding, като claude.ai) =====
+
+  const TOPIC_URL_RE = /^\/t\/([a-zA-Z0-9]+)$/;
+
+  function navigateToTopic(id) {
+    if (location.pathname !== `/t/${id}`) history.pushState({ topicId: id }, '', `/t/${id}`);
+    openTopic(id);
+  }
+
+  function navigateToNew() {
+    if (location.pathname !== '/') history.pushState({ topicId: null }, '', '/');
+  }
+
+  function showComposer() {
     currentTopicId = null;
     clearInterval(pollTimer);
     topicThreadPanel.hidden = true;
@@ -305,6 +401,17 @@
     autoResize(topicQuery);
     topicFormError.hidden = true;
     topicList.querySelectorAll('.history-item.active').forEach((el) => el.classList.remove('active'));
+  }
+
+  window.addEventListener('popstate', () => {
+    const match = location.pathname.match(TOPIC_URL_RE);
+    if (match) openTopic(match[1]);
+    else showComposer();
+  });
+
+  topicNewBtn.addEventListener('click', () => {
+    navigateToNew();
+    showComposer();
   });
 
   // Само Ctrl+Enter изпраща; обикновен Enter и Shift+Enter си остават нов ред
@@ -344,7 +451,7 @@
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || I18N.t('err_topic_create_default'));
 
-      await openTopic(data.topicId);
+      navigateToTopic(data.topicId);
     } catch (err) {
       topicFormError.textContent = err.message;
       topicFormError.hidden = false;
@@ -395,6 +502,11 @@
 
   document.addEventListener('app:ready', () => {
     loadTopicList();
+    const match = location.pathname.match(TOPIC_URL_RE);
+    if (match) {
+      history.replaceState({ topicId: match[1] }, '', location.pathname);
+      openTopic(match[1]);
+    }
   });
 
   document.addEventListener('i18n:change', () => {

@@ -86,6 +86,10 @@ async function initSchema() {
     ALTER TABLE topics ADD COLUMN IF NOT EXISTS post_count INTEGER NOT NULL DEFAULT 25;
     ALTER TABLE topics ADD COLUMN IF NOT EXISTS extended BOOLEAN NOT NULL DEFAULT false;
     ALTER TABLE topics ADD COLUMN IF NOT EXISTS time_filter TEXT NOT NULL DEFAULT 'all';
+    -- title_is_custom=false значи заглавието е авто-генерирано (или fallback,
+    -- отрязаният въпрос) и може да се презапише от LLM/backfill; след
+    -- ръчно преименуване от потребителя се вдига на true и вече не се пипа.
+    ALTER TABLE topics ADD COLUMN IF NOT EXISTS title_is_custom BOOLEAN NOT NULL DEFAULT false;
     ALTER TABLE topics DROP COLUMN IF EXISTS use_own_knowledge;
     ALTER TABLE topics DROP COLUMN IF EXISTS depth;
     CREATE INDEX IF NOT EXISTS idx_topics_user ON topics(user_id, updated_at DESC);

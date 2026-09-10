@@ -48,6 +48,12 @@ const topicsRouter = createTopicsRouter({ pool, requireAuth });
 app.use(topicsRouter);
 app.use(express.static(path.join(__dirname, 'public')));
 
+// SPA route: /t/:id зарежда същия index.html, темата се отваря client-side
+// по URL-a - позволява директно линкване/споделяне/презареждане на конкретна тема.
+app.get('/t/:id', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 // --- Job опашка (в паметта; резултатите се пазят трайно в Postgres) ---
 const jobs = new Map(); // id -> live job state (log, progress) докато е скорошен
 let runningJobId = null;

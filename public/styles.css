@@ -126,14 +126,25 @@ body{
   border:1px solid var(--border); border-radius:6px; padding:0.6rem 0.7rem; cursor:pointer; background:var(--bg);
 }
 .history-item:hover{border-color:var(--accent);}
-.history-item .h-sub{font-weight:600; font-size:0.88rem;}
-.history-item .h-meta{color:var(--ink-muted); font-size:0.75rem; margin-top:0.2rem; display:flex; gap:0.5rem; flex-wrap:wrap;}
+.history-item .h-sub{font-weight:600; font-size:0.88rem; display:flex; align-items:center; gap:0.4rem;}
+.history-item .h-meta{color:var(--ink-muted); font-size:0.75rem; margin-top:0.2rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;}
 .history-item .h-status{
   display:inline-block; font-size:0.68rem; text-transform:uppercase; padding:0.05rem 0.4rem; border-radius:999px;
 }
 .history-item .h-status.done{background:var(--ok-bg); color:var(--ok-ink);}
 .history-item .h-status.error{background:var(--err-bg); color:var(--err-ink);}
 .history-item .h-status.running, .history-item .h-status.queued{background:var(--run-bg); color:var(--run-ink);}
+.history-item .h-right{display:flex; align-items:center; gap:0.35rem; margin-left:auto;}
+.history-item .h-icon-btn{
+  background:none; background-image:none; border:none; box-shadow:none; padding:0; margin:0; cursor:pointer;
+  color:var(--ink-muted); display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; flex:none;
+}
+.history-item .h-icon-btn:hover{color:var(--accent); opacity:1; transform:none; box-shadow:none;}
+.history-item .h-icon-btn svg{width:14px; height:14px;}
+.history-item .h-rename-input{
+  font:inherit; font-weight:600; font-size:0.88rem; flex:1; min-width:0; border:1px solid var(--accent); border-radius:4px; padding:0 0.3rem;
+  background:var(--bg); color:var(--ink);
+}
 
 .qa-panel h2{margin-bottom:0.3rem;}
 .qa-hint{color:var(--ink-muted); font-size:0.82rem; margin:0 0 1rem;}
