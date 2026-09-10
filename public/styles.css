@@ -187,7 +187,7 @@ input[type=text], input[type=number], input[type=email], input[type=password], s
   box-shadow:var(--shadow-sm); transition:border-color 0.15s ease, box-shadow 0.15s ease;
 }
 textarea{resize:none; overflow:hidden;}
-.prefix-input{display:flex; align-items:center; border:1px solid var(--border); border-radius:8px; background:var(--field-bg); overflow:hidden; box-shadow:var(--shadow-sm);}
+.prefix-input{position:relative; display:flex; align-items:center; border:1px solid var(--border); border-radius:8px; background:var(--field-bg); overflow:hidden; box-shadow:var(--shadow-sm);}
 .prefix-input span{padding:0 0 0 0.9rem; color:var(--ink-muted);}
 .prefix-input input{border:none; background:transparent; flex:1; padding:0.72rem 0.9rem; box-shadow:none;}
 .prefix-input input:focus{outline:none;}
@@ -195,8 +195,20 @@ textarea{resize:none; overflow:hidden;}
 input:focus, select:focus, textarea:focus{outline:1.5px solid var(--accent); outline-offset:1px; border-color:var(--accent);}
 
 .topic-subs-list{display:flex; flex-direction:column; gap:0.6rem; margin-bottom:0.7rem;}
-.topic-sub-row{display:flex; align-items:center; gap:0.5rem;}
+.topic-sub-row{position:relative; display:flex; align-items:center; gap:0.5rem;}
 .topic-sub-row .prefix-input{flex:1;}
+.sub-autocomplete{
+  position:absolute; top:100%; left:0; right:0; margin-top:0.25rem; z-index:20;
+  background:var(--field-bg); border:1px solid var(--border); border-radius:8px; box-shadow:var(--shadow-sm);
+  max-height:220px; overflow-y:auto; padding:0.25rem;
+}
+.sub-autocomplete-item{
+  display:flex; align-items:center; justify-content:space-between; gap:0.5rem; width:100%;
+  background:none; background-image:none; border:none; box-shadow:none; text-align:left; padding:0.4rem 0.6rem;
+  border-radius:6px; cursor:pointer; color:var(--ink); font-size:0.85rem;
+}
+.sub-autocomplete-item:hover{background:var(--bg); opacity:1; transform:none; box-shadow:none;}
+.sub-autocomplete-count{color:var(--ink-muted); font-size:0.75rem;}
 .topic-sub-remove{
   flex-shrink:0; width:32px; height:32px; padding:0; border-radius:50%; border:1px solid var(--border);
   background:var(--panel); background-image:none; box-shadow:none; color:var(--ink-muted);

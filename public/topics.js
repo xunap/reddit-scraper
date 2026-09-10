@@ -125,6 +125,79 @@
 
   updateSubAddState();
 
+  // ===================== Autocomplete за имена на сабредити =====================
+  // Event delegation върху контейнера - работи автоматично и за редовете,
+  // добавени динамично по-късно от addSubRow().
+
+  let acDropdown = null;
+  let acAbortController = null;
+  let acDebounceTimer = null;
+
+  function closeAutocomplete() {
+    if (acDropdown) {
+      acDropdown.remove();
+      acDropdown = null;
+    }
+  }
+
+  function formatSubscribers(n) {
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+    if (n >= 1000) return Math.round(n / 1000) + 'K';
+    return String(n);
+  }
+
+  function renderAutocomplete(input, results) {
+    closeAutocomplete();
+    if (!results.length) return;
+    const dropdown = document.createElement('div');
+    dropdown.className = 'sub-autocomplete';
+    results.forEach((r) => {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'sub-autocomplete-item';
+      item.innerHTML = `<span>r/${escapeHtml(r.name)}</span>${r.subscribers ? `<span class="sub-autocomplete-count">${formatSubscribers(r.subscribers)}</span>` : ''}`;
+      // mousedown (не click) за да хванем избора преди input-ът да загуби фокус.
+      item.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        input.value = r.name;
+        closeAutocomplete();
+      });
+      dropdown.appendChild(item);
+    });
+    // Слага се на нивото на целия ред (не на .prefix-input, който има
+    // overflow:hidden заради заоблените ъгли и би отрязал падащото меню).
+    input.closest('.topic-sub-row').appendChild(dropdown);
+    acDropdown = dropdown;
+  }
+
+  topicSubsList.addEventListener('input', (e) => {
+    if (!e.target.classList.contains('topic-sub-input')) return;
+    const input = e.target;
+    clearTimeout(acDebounceTimer);
+    const q = input.value.trim();
+    if (q.length < 2) {
+      closeAutocomplete();
+      return;
+    }
+    acDebounceTimer = setTimeout(async () => {
+      if (acAbortController) acAbortController.abort();
+      acAbortController = new AbortController();
+      try {
+        const res = await fetch(`/api/subreddits/autocomplete?q=${encodeURIComponent(q)}`, { signal: acAbortController.signal });
+        const data = await res.json();
+        if (document.activeElement === input) renderAutocomplete(input, data.results || []);
+      } catch (err) {
+        // тихо - автодовършването не е критично
+      }
+    }, 250);
+  });
+
+  topicSubsList.addEventListener('focusout', (e) => {
+    if (!e.target.classList.contains('topic-sub-input')) return;
+    // малко отлагане, за да може mousedown върху резултат да отработи първо
+    setTimeout(closeAutocomplete, 150);
+  });
+
   // ===================== Thread =====================
 
   const topicThreadPanel = document.getElementById('topic-thread-panel');
