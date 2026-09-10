@@ -419,6 +419,41 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
     res.json({ ok: true });
   });
 
+  // Еднократен backfill: генерира кратки LLM заглавия на всички стари теми,
+  // чието заглавие още е fallback (отрязаният въпрос) отпреди тази функция да
+  // съществува. Пуска се ръчно веднъж от логнат потребител, после се маха.
+  router.post('/api/admin/backfill-titles', requireAuth, async (req, res) => {
+    try {
+      const rows = (
+        await pool.query(`
+          SELECT t.id, tm.content AS first_message
+          FROM topics t
+          JOIN LATERAL (
+            SELECT content FROM topic_messages
+            WHERE topic_id = t.id AND role = 'user'
+            ORDER BY created_at ASC LIMIT 1
+          ) tm ON true
+          WHERE t.title_is_custom = false
+        `)
+      ).rows;
+
+      let updated = 0;
+      let failed = 0;
+      for (const row of rows) {
+        try {
+          const title = await generateTopicTitle({ query: row.first_message });
+          await pool.query('UPDATE topics SET title=$1 WHERE id=$2 AND title_is_custom=false', [title, row.id]);
+          updated++;
+        } catch (err) {
+          failed++;
+        }
+      }
+      res.json({ total: rows.length, updated, failed });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   router.recoverIncompleteState = recoverIncompleteState;
   return router;
 };
