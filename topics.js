@@ -256,9 +256,12 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
   router.get('/api/subreddits/autocomplete', requireAuth, async (req, res) => {
     const q = String(req.query.q || '').trim().toLowerCase();
     if (q.length < 2) return res.json({ results: [] });
+    // posts IS NOT NULL (а не status='done') - и сабредит, чийто периодичен
+    // refresh в момента е running/error, си остава валидно, познато име, щом
+    // някога вече е бил успешно скрейпнат.
     const rows = (
       await pool.query(
-        "SELECT DISTINCT subreddit FROM subreddit_cache WHERE subreddit ILIKE $1 AND status='done' ORDER BY subreddit ASC LIMIT 8",
+        'SELECT DISTINCT subreddit FROM subreddit_cache WHERE subreddit ILIKE $1 AND posts IS NOT NULL ORDER BY subreddit ASC LIMIT 8',
         [q.replace(/[%_]/g, '\\$&') + '%']
       )
     ).rows;
