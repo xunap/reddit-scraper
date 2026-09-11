@@ -12,7 +12,7 @@
   const topicQuery = document.getElementById('topic-query');
   const topicSubsTags = document.getElementById('topic-subs-tags');
   const topicSubText = document.getElementById('topic-sub-text');
-  const topicSubPrefix = document.getElementById('topic-sub-prefix');
+  const topicSubInputBox = document.getElementById('topic-sub-input-box');
   const topicSuggestBtn = document.getElementById('topic-suggest-btn');
   const topicSuggestChips = document.getElementById('topic-suggest-chips');
   const MAX_SUBREDDIT_TAGS = 10;
@@ -43,7 +43,7 @@
   }
 
   function renderSubTags() {
-    topicSubsTags.querySelectorAll('.sub-tag').forEach((el) => el.remove());
+    topicSubsTags.innerHTML = '';
     subTags.forEach((name) => {
       const tag = document.createElement('span');
       tag.className = 'sub-tag';
@@ -55,11 +55,10 @@
       removeBtn.setAttribute('aria-label', 'Remove');
       removeBtn.addEventListener('click', () => removeSubTag(name));
       tag.appendChild(removeBtn);
-      topicSubsTags.insertBefore(tag, topicSubPrefix);
+      topicSubsTags.appendChild(tag);
     });
     const atMax = subTags.length >= MAX_SUBREDDIT_TAGS;
-    topicSubPrefix.hidden = atMax;
-    topicSubText.hidden = atMax;
+    topicSubInputBox.hidden = atMax;
     if (atMax) closeAutocomplete();
   }
 
@@ -105,12 +104,6 @@
     } else if (e.key === 'Backspace' && !topicSubText.value && subTags.length) {
       removeSubTag(subTags[subTags.length - 1]);
     }
-  });
-
-  // Клик някъде другаде в кутията (не върху таг/бутон) фокусира инпута -
-  // прави цялата кутия да се държи като едно поле, не само тесния текст input.
-  topicSubsTags.addEventListener('click', (e) => {
-    if (e.target === topicSubsTags) topicSubText.focus();
   });
 
   function renderSuggestChips(names) {
@@ -173,6 +166,12 @@
     }
   }
 
+  function formatSubscribers(n) {
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+    if (n >= 1000) return Math.round(n / 1000) + 'K';
+    return String(n);
+  }
+
   function renderAutocomplete(results) {
     closeAutocomplete();
     if (!results.length) return;
@@ -182,7 +181,7 @@
       const item = document.createElement('button');
       item.type = 'button';
       item.className = 'sub-autocomplete-item';
-      item.innerHTML = `<span>r/${escapeHtml(r.name)}</span>`;
+      item.innerHTML = `<span>r/${escapeHtml(r.name)}</span>${r.subscribers ? `<span class="sub-autocomplete-count">${formatSubscribers(r.subscribers)}</span>` : ''}`;
       // mousedown (не click) за да хванем избора преди input-ът да загуби фокус.
       item.addEventListener('mousedown', (e) => {
         e.preventDefault();
@@ -192,7 +191,7 @@
       });
       dropdown.appendChild(item);
     });
-    topicSubsTags.appendChild(dropdown);
+    topicSubInputBox.appendChild(dropdown);
     acDropdown = dropdown;
   }
 
@@ -238,6 +237,7 @@
 
   let currentTopicId = null;
   let pollTimer = null;
+  let lastKnownTitle = null;
 
   function escapeHtml(str) {
     return String(str ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -380,13 +380,15 @@
 
   // "done" не се показва - очевидно е готово щом виждаш отговора; за
   // running/queued/error бейджът все още носи полезна информация.
-  function setStatusBadge(status) {
+  function setStatusBadge(status, percent) {
     if (!status || status === 'done') {
       topicStatusBadge.hidden = true;
       return;
     }
     topicStatusBadge.hidden = false;
-    topicStatusBadge.textContent = I18N.t('status_' + status) || status;
+    const label = I18N.t('status_' + status) || status;
+    topicStatusBadge.textContent =
+      typeof percent === 'number' && (status === 'running' || status === 'queued') ? `${label} ${percent}%` : label;
     topicStatusBadge.className = 'badge ' + status;
   }
 
@@ -420,6 +422,7 @@
       if (!res.ok) throw new Error(data.error || I18N.t('err_topic_load_default'));
 
       topicThreadTitle.textContent = data.topic.title;
+      lastKnownTitle = data.topic.title;
       setStatusBadge(data.topic.status);
       renderTopicMeta(data.topic);
       data.messages.forEach(renderMessage);
@@ -456,8 +459,14 @@
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || I18N.t('err_topic_load_default'));
 
-      setStatusBadge(data.status);
+      setStatusBadge(data.status, data.progressPercent);
       topicProgress.textContent = data.progressMessage || I18N.t('topic_progress_generating');
+
+      if (data.title && data.title !== lastKnownTitle) {
+        lastKnownTitle = data.title;
+        topicThreadTitle.textContent = data.title;
+        loadTopicList();
+      }
 
       if (data.status === 'done') {
         clearInterval(pollTimer);
@@ -516,6 +525,13 @@
   });
 
   topicNewBtn.addEventListener('click', () => {
+    navigateToNew();
+    showComposer();
+  });
+
+  const brandHome = document.getElementById('brand-home');
+  brandHome.addEventListener('click', () => {
+    if (document.getElementById('app-view').hidden) return; // все още на login екрана - нищо за отваряне
     navigateToNew();
     showComposer();
   });

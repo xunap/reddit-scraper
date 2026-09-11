@@ -390,4 +390,90 @@ async function scrapeSubreddit(opts, onProgress = () => {}) {
   }
 }
 
-module.exports = { scrapeSubreddit, searchSubredditRelevance };
+// ===================== Autocomplete за имена на сабредити =====================
+// Reddit-овото JSON API блокира обикновени (non-browser) HTTP заявки с 403,
+// дори за валидни сабредити - но fetch(), изпълнен ВЪТРЕ в реална, вече
+// заредена reddit.com страница (със session/credentials на самия browser),
+// минава нормално, защото идва от истинска browser мрежова сесия, не гол
+// Node HTTP request. Затова държим ЕДНА постоянна, лека browser страница
+// жива между заявките (само за autocomplete), вместо да палим нов browser
+// (скъпо, секунди) при всяко търсене - typeahead трябва да е бърз.
+let acBrowser = null;
+let acPage = null;
+let acInitPromise = null;
+
+async function ensureAutocompletePage() {
+  if (acPage) return acPage;
+  if (!acInitPromise) {
+    acInitPromise = (async () => {
+      acBrowser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
+      const context = await acBrowser.newContext({
+        userAgent:
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+      });
+      const page = await context.newPage();
+      await page.goto('https://www.reddit.com/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+      // Веднага след domcontentloaded сесийните cookies/токъни още не са напълно
+      // "уседнали" - първа fetch заявка веднага след goto понякога се връща
+      // празна дори за валидна заявка. Кратка пауза го оправя надеждно.
+      await page.waitForTimeout(1500);
+      acPage = page;
+      return page;
+    })().finally(() => {
+      acInitPromise = null;
+    });
+  }
+  return acInitPromise;
+}
+
+async function resetAutocompletePage() {
+  const browser = acBrowser;
+  acPage = null;
+  acBrowser = null;
+  if (browser) await browser.close().catch(() => {});
+}
+
+async function fetchAutocomplete(page, query) {
+  return page.evaluate(async (q) => {
+    const url =
+      'https://www.reddit.com/api/subreddit_autocomplete_v2.json?query=' +
+      encodeURIComponent(q) +
+      '&limit=8&include_over_18=false&include_profiles=false&typeahead_active=true';
+    const res = await fetch(url, { credentials: 'include' });
+    if (!res.ok) return { ok: false };
+    return { ok: true, data: await res.json() };
+  }, query);
+}
+
+/**
+ * Търсене на сабредити по префикс за typeahead - срещу целия Reddit, не само
+ * вече скрейпнатите от нас (виж бележката по-горе защо е нужен browser).
+ */
+async function autocompleteSubreddits(query) {
+  try {
+    const page = await ensureAutocompletePage();
+    const result = await fetchAutocomplete(page, query);
+    if (!result.ok) throw new Error('non-ok response');
+    return (result.data?.data?.children || []).map((c) => ({
+      name: c.data.display_name,
+      subscribers: c.data.subscribers || 0,
+    }));
+  } catch (err) {
+    // Страницата може да е "умряла" (краш, изтекла сесия) - рестартираме и
+    // пробваме точно веднъж отначало, преди тихо да се откажем.
+    await resetAutocompletePage();
+    try {
+      const page = await ensureAutocompletePage();
+      const result = await fetchAutocomplete(page, query);
+      if (!result.ok) return [];
+      return (result.data?.data?.children || []).map((c) => ({
+        name: c.data.display_name,
+        subscribers: c.data.subscribers || 0,
+      }));
+    } catch (err2) {
+      return [];
+    }
+  }
+}
+
+module.exports = { scrapeSubreddit, searchSubredditRelevance, autocompleteSubreddits };

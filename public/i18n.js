@@ -3,7 +3,6 @@
 
   const STRINGS = {
     en: {
-      brand_sub: 'Playwright · no API',
       auth_tab_login: 'Log in',
       auth_tab_signup: 'Sign up',
       field_password_login: 'Password',
@@ -57,7 +56,6 @@
       err_topic_delete_default: 'Failed to delete.',
     },
     bg: {
-      brand_sub: 'Playwright · без API',
       auth_tab_login: 'Вход',
       auth_tab_signup: 'Регистрация',
       field_password_login: 'Парола',

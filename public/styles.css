@@ -39,8 +39,11 @@ body{
   border-bottom:1px solid var(--border); background:var(--panel);
   position:sticky; top:0; z-index:40;
 }
-.brand{font-weight:700; font-size:1.1rem;}
-.brand-sub{color:var(--ink-muted); font-size:0.85rem;}
+.brand{
+  font-weight:700; font-size:1.1rem; font-family:inherit; color:var(--ink); background:none; background-image:none;
+  border:none; box-shadow:none; padding:0; cursor:pointer; transform:none;
+}
+.brand:hover{opacity:0.75; transform:none; box-shadow:none; filter:none;}
 .topbar-user{margin-left:auto; display:flex; align-items:center; gap:0.8rem; font-size:0.85rem; color:var(--ink-muted);}
 .topbar-user .email{color:var(--ink); font-weight:600;}
 .topbar-user button{
@@ -203,28 +206,21 @@ textarea{resize:none; overflow:hidden;}
 .prefix-input:focus-within{outline:1.5px solid var(--accent); outline-offset:1px;}
 input:focus, select:focus, textarea:focus{outline:1.5px solid var(--accent); outline-offset:1px; border-color:var(--accent);}
 
-.tag-input{
-  position:relative; display:flex; flex-wrap:wrap; align-items:center; gap:0.4rem;
-  border:1px solid var(--border); border-radius:8px; background:var(--field-bg);
-  padding:0.5rem 0.6rem; box-shadow:var(--shadow-sm); margin-bottom:0.7rem;
-}
-.tag-input:focus-within{outline:1.5px solid var(--accent); outline-offset:1px;}
-.tag-input-prefix{color:var(--ink-muted); margin-right:-0.3rem; font-size:0.95rem;}
-.tag-input-field{
-  flex:1; min-width:120px; border:none; background:transparent; box-shadow:none; padding:0.3rem 0.1rem;
-  font-size:0.95rem; color:var(--ink);
-}
-.tag-input-field:focus{outline:none;}
+/* Всеки сабредит е своя малка pill - НЕ вътре в общ рамкиран контейнер (виж
+   #topic-sub-input-box по-долу за отделната кутийка за писане на нов). */
+.sub-tags-row{display:flex; flex-wrap:wrap; gap:0.4rem;}
+.sub-tags-row:not(:empty){margin-bottom:0.6rem;}
 .sub-tag{
   display:inline-flex; align-items:center; gap:0.25rem; background:var(--bg); border:1px solid var(--border);
-  border-radius:6px; padding:0.3rem 0.3rem 0.3rem 0.6rem; font-size:0.88rem; color:var(--ink); white-space:nowrap;
+  border-radius:999px; padding:0.3rem 0.3rem 0.3rem 0.75rem; font-size:0.85rem; color:var(--ink); white-space:nowrap;
 }
 .sub-tag .tag-prefix{color:var(--ink-muted);}
 .sub-tag .tag-remove{
-  background:none; background-image:none; border:none; box-shadow:none; padding:0.1rem 0.35rem; margin:0;
-  color:var(--ink-muted); font-size:1rem; line-height:1; cursor:pointer; border-radius:4px;
+  background:none; background-image:none; border:none; box-shadow:none; padding:0.1rem 0.4rem; margin:0;
+  color:var(--ink-muted); font-size:1rem; line-height:1; cursor:pointer; border-radius:999px;
 }
 .sub-tag .tag-remove:hover{color:var(--err-ink); opacity:1; transform:none; box-shadow:none;}
+#topic-sub-input-box{margin-bottom:0.7rem;}
 .sub-autocomplete{
   position:absolute; top:100%; left:0; right:0; margin-top:0.25rem; z-index:20;
   background:var(--field-bg); border:1px solid var(--border); border-radius:8px; box-shadow:var(--shadow-sm);

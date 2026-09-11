@@ -11,8 +11,7 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">Reddit&nbsp;Scraper</div>
-    <div class="brand-sub" data-i18n="brand_sub">Playwright · no API</div>
+    <button type="button" class="brand" id="brand-home">Reddit&nbsp;Scraper</button>
     <div class="topbar-user" id="topbar-user"></div>
     <div class="lang-switch" id="lang-switch">
       <button type="button" data-lang-option="en">EN</button>
@@ -76,9 +75,10 @@
 
             <div class="field">
               <span data-i18n="topic_sub1">Subreddit</span>
-              <div id="topic-subs-tags" class="tag-input">
-                <span class="tag-input-prefix" id="topic-sub-prefix">r/</span>
-                <input type="text" id="topic-sub-text" class="tag-input-field" autocomplete="off" data-i18n-placeholder="topic_sub_placeholder" placeholder="type and press Enter">
+              <div id="topic-subs-tags" class="sub-tags-row"></div>
+              <div class="prefix-input" id="topic-sub-input-box">
+                <span>r/</span>
+                <input type="text" id="topic-sub-text" autocomplete="off" data-i18n-placeholder="topic_sub_placeholder" placeholder="type and press Enter">
               </div>
               <button type="button" id="topic-suggest-btn" class="btn-add-sub" data-i18n="topic_suggest_btn">Suggest related subreddits</button>
               <div id="topic-suggest-chips" class="topic-suggest-chips"></div>

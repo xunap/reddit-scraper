@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const express = require('express');
-const { scrapeSubreddit, searchSubredditRelevance } = require('./scraper');
+const { scrapeSubreddit, searchSubredditRelevance, autocompleteSubreddits } = require('./scraper');
 const { generateDigest, continueTopicChat, suggestSubreddits, generateTopicTitle, LLM_ENABLED } = require('./llm');
 
 const MAX_SUBREDDITS = 10;
@@ -52,8 +52,22 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
   const workQueue = []; // масив от job keys (виж cacheKey/searchKey)
   let runningKey = null;
   const workItems = new Map(); // key -> { type:'cache', cacheId } | { type:'search', topicId, subreddit, query }
-  const statusText = new Map(); // key -> текущо съобщение за прогрес
-  const pendingTopics = new Map(); // topicId -> { waitingOn: Set<key>, subreddits: string[], query, extended, timeFilter, postCount }
+  const jobProgress = new Map(); // key -> { message, phase, current, total } - виж phaseFraction за как става процент
+  const pendingTopics = new Map(); // topicId -> { waitingOn: Set<key>, totalJobs, subreddits: string[], query, extended, timeFilter, postCount }
+
+  // Грубо тегло на фазите в рамките на ЕДНА задача (cache или search job) -
+  // listing (изброяване на постове) обикновено е много по-бързо от details
+  // (посещение на всеки пост за текст/коментари), затова му даваме по-малко
+  // тегло, вместо просто current/total да скача напред-назад между фазите.
+  function phaseFraction(phase, current, total) {
+    if (phase === 'done' || phase === 'search-done') return 1;
+    if (phase === 'listing-done') return 0.2;
+    if (!total) return 0.05;
+    const frac = Math.max(0, Math.min(1, current / total));
+    if (phase === 'details' || phase === 'search-details') return 0.2 + 0.8 * frac;
+    if (phase === 'listing' || phase === 'search') return 0.2 * frac;
+    return 0.05;
+  }
 
   const cacheKey = (cacheId) => `cache:${cacheId}`;
   const searchKey = (topicId, subreddit) => `search:${topicId}:${subreddit}`;
@@ -93,7 +107,7 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
     const sinceDate = isIncremental ? new Date(row.updated_at).toISOString() : null;
 
     await pool.query("UPDATE subreddit_cache SET status='running', updated_at=now() WHERE id=$1", [id]);
-    statusText.set(key, `Скрейпване на r/${row.subreddit}...`);
+    jobProgress.set(key, { message: `Скрейпване на r/${row.subreddit}...`, phase: null, current: 0, total: 0 });
     try {
       const newPosts = await scrapeSubreddit(
         {
@@ -105,10 +119,12 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
           sinceDate,
         },
         (evt) =>
-          statusText.set(
-            key,
-            `r/${row.subreddit}${isIncremental ? ' (само нови постове)' : ''}: ${evt.message}`
-          )
+          jobProgress.set(key, {
+            message: `r/${row.subreddit}${isIncremental ? ' (само нови постове)' : ''}: ${evt.message}`,
+            phase: evt.phase,
+            current: evt.current,
+            total: evt.total,
+          })
       );
 
       let mergedPosts = [...newPosts].sort((a, b) => (b.votes || 0) - (a.votes || 0));
@@ -130,18 +146,18 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
         [id, err.message || String(err)]
       );
     } finally {
-      statusText.delete(key);
+      jobProgress.delete(key);
       await checkPendingTopics(key);
     }
   }
 
   async function runSearchScrape(key, item) {
-    statusText.set(key, `Търсене по релевантност в r/${item.subreddit}...`);
+    jobProgress.set(key, { message: `Търсене по релевантност в r/${item.subreddit}...`, phase: null, current: 0, total: 0 });
     let posts = [];
     try {
       posts = await searchSubredditRelevance(
         { subreddit: item.subreddit, query: item.query, limit: SEARCH_RESULT_LIMIT, commentLimit: SEARCH_COMMENT_LIMIT },
-        (evt) => statusText.set(key, evt.message)
+        (evt) => jobProgress.set(key, { message: evt.message, phase: evt.phase, current: evt.current, total: evt.total })
       );
     } catch (err) {
       // search-ът е допълнение, не критичен източник - темата продължава
@@ -155,7 +171,7 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
           JSON.stringify(posts),
         ])
         .catch(() => {});
-      statusText.delete(key);
+      jobProgress.delete(key);
       await checkPendingTopics(key);
     }
   }
@@ -312,7 +328,7 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
       if (waitingOn.size === 0) {
         finalizeTopic(topic.id, pendingData);
       } else {
-        pendingTopics.set(topic.id, { waitingOn, ...pendingData });
+        pendingTopics.set(topic.id, { waitingOn, totalJobs: waitingOn.size, ...pendingData });
       }
     }
     processQueue();
@@ -320,25 +336,14 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
 
   // ===================== Routes =====================
 
-  // Reddit блокира обикновени (non-browser) HTTP заявки към JSON API-то си
-  // (403 дори за валидни сабредити), затова истинско live autocomplete срещу
-  // целия Reddit не е възможно без пълен browser per keystroke - твърде бавно
-  // и тежко за typeahead. Вместо това предлагаме от собствения ни кеш
-  // (сабредити, които вече е скрейпвал някой потребител) - мигновено, без
-  // мрежова заявка навън.
+  // Търси в целия Reddit (не само вече скрейпнати от нас сабредити) - виж
+  // autocompleteSubreddits в scraper.js за как заобикаля 403-те на Reddit
+  // API-то за обикновени HTTP заявки.
   router.get('/api/subreddits/autocomplete', requireAuth, async (req, res) => {
-    const q = String(req.query.q || '').trim().toLowerCase();
+    const q = String(req.query.q || '').trim();
     if (q.length < 2) return res.json({ results: [] });
-    // posts IS NOT NULL (а не status='done') - и сабредит, чийто периодичен
-    // refresh в момента е running/error, си остава валидно, познато име, щом
-    // някога вече е бил успешно скрейпнат.
-    const rows = (
-      await pool.query(
-        'SELECT DISTINCT subreddit FROM subreddit_cache WHERE subreddit ILIKE $1 AND posts IS NOT NULL ORDER BY subreddit ASC LIMIT 8',
-        [q.replace(/[%_]/g, '\\$&') + '%']
-      )
-    ).rows;
-    res.json({ results: rows.map((r) => ({ name: r.subreddit })) });
+    const results = await autocompleteSubreddits(q).catch(() => []);
+    res.json({ results });
   });
 
   router.post('/api/topics/suggest-subreddits', requireAuth, async (req, res) => {
@@ -410,7 +415,7 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
       // винаги съдържа поне search job-овете, виж buildWaitingOn.
       finalizeTopic(topicId, pendingData);
     } else {
-      pendingTopics.set(topicId, { waitingOn, ...pendingData });
+      pendingTopics.set(topicId, { waitingOn, totalJobs: waitingOn.size, ...pendingData });
     }
 
     res.json({ topicId });
@@ -440,20 +445,27 @@ module.exports = function createTopicsRouter({ pool, requireAuth }) {
   });
 
   router.get('/api/topics/:id/status', requireAuth, async (req, res) => {
-    const result = await pool.query('SELECT status, error FROM topics WHERE id=$1 AND user_id=$2', [req.params.id, req.user.id]);
+    const result = await pool.query('SELECT status, error, title FROM topics WHERE id=$1 AND user_id=$2', [req.params.id, req.user.id]);
     if (!result.rows.length) return res.status(404).json({ error: 'Темата не е намерена.' });
     const pending = pendingTopics.get(req.params.id);
     let progressMessage = null;
+    let progressPercent = null;
     if (pending) {
+      const totalJobs = pending.totalJobs || pending.waitingOn.size || 1;
+      const completedJobs = Math.max(0, totalJobs - pending.waitingOn.size);
+      let intraFraction = 0;
       for (const key of pending.waitingOn) {
-        if (statusText.has(key)) {
-          progressMessage = statusText.get(key);
+        const jp = jobProgress.get(key);
+        if (jp) {
+          progressMessage = jp.message;
+          intraFraction = phaseFraction(jp.phase, jp.current, jp.total);
           break;
         }
       }
       if (!progressMessage) progressMessage = 'В опашката за скрейпване...';
+      progressPercent = Math.max(0, Math.min(100, Math.round(((completedJobs + intraFraction) / totalJobs) * 100)));
     }
-    res.json({ ...result.rows[0], progressMessage });
+    res.json({ ...result.rows[0], progressMessage, progressPercent });
   });
 
   router.post('/api/topics/:id/messages', requireAuth, async (req, res) => {
