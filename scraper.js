@@ -440,8 +440,8 @@ async function fetchAutocomplete(page, query) {
       encodeURIComponent(q) +
       '&limit=8&include_over_18=false&include_profiles=false&typeahead_active=true';
     const res = await fetch(url, { credentials: 'include' });
-    if (!res.ok) return { ok: false };
-    return { ok: true, data: await res.json() };
+    if (!res.ok) return { ok: false, status: res.status, statusText: res.statusText };
+    return { ok: true, status: res.status, data: await res.json() };
   }, query);
 }
 
@@ -453,24 +453,31 @@ async function autocompleteSubreddits(query) {
   try {
     const page = await ensureAutocompletePage();
     const result = await fetchAutocomplete(page, query);
-    if (!result.ok) throw new Error('non-ok response');
+    if (!result.ok) throw new Error('non-ok response: ' + JSON.stringify(result));
+    console.log('[autocomplete] ok, status=' + result.status + ' children=' + (result.data?.data?.children || []).length);
     return (result.data?.data?.children || []).map((c) => ({
       name: c.data.display_name,
       subscribers: c.data.subscribers || 0,
     }));
   } catch (err) {
+    console.error('[autocomplete] first attempt failed: ' + (err && err.stack || err));
     // Страницата може да е "умряла" (краш, изтекла сесия) - рестартираме и
     // пробваме точно веднъж отначало, преди тихо да се откажем.
     await resetAutocompletePage();
     try {
       const page = await ensureAutocompletePage();
       const result = await fetchAutocomplete(page, query);
-      if (!result.ok) return [];
+      if (!result.ok) {
+        console.error('[autocomplete] retry non-ok: ' + JSON.stringify(result));
+        return [];
+      }
+      console.log('[autocomplete] retry ok, children=' + (result.data?.data?.children || []).length);
       return (result.data?.data?.children || []).map((c) => ({
         name: c.data.display_name,
         subscribers: c.data.subscribers || 0,
       }));
     } catch (err2) {
+      console.error('[autocomplete] retry failed: ' + (err2 && err2.stack || err2));
       return [];
     }
   }
