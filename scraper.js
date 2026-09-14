@@ -406,10 +406,18 @@ async function ensureAutocompletePage() {
   if (acPage) return acPage;
   if (!acInitPromise) {
     acInitPromise = (async () => {
-      acBrowser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
+      acBrowser = await chromium.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled'],
+      });
       const context = await acBrowser.newContext({
         userAgent:
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+        viewport: { width: 1280, height: 900 },
+        locale: 'en-US',
+      });
+      await context.addInitScript(() => {
+        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
       });
       const page = await context.newPage();
       await page.goto('https://www.reddit.com/', { waitUntil: 'domcontentloaded', timeout: 20000 });
