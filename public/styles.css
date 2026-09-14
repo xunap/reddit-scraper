@@ -199,7 +199,7 @@ input[type=text], input[type=number], input[type=email], input[type=password], s
   box-shadow:var(--shadow-sm); transition:border-color 0.15s ease, box-shadow 0.15s ease;
 }
 textarea{resize:none; overflow:hidden;}
-.prefix-input{position:relative; display:flex; align-items:center; border:1px solid var(--border); border-radius:8px; background:var(--field-bg); overflow:hidden; box-shadow:var(--shadow-sm);}
+.prefix-input{position:relative; display:flex; align-items:center; border:1px solid var(--border); border-radius:8px; background:var(--field-bg); box-shadow:var(--shadow-sm);}
 .prefix-input span{padding:0 0 0 0.9rem; color:var(--ink-muted);}
 .prefix-input input{border:none; background:transparent; flex:1; padding:0.72rem 0.9rem; box-shadow:none;}
 .prefix-input input:focus{outline:none;}
